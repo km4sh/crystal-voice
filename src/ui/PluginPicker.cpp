@@ -10,6 +10,7 @@ PluginPickerComponent::PluginPickerComponent (juce::Array<juce::PluginDescriptio
     search.setComponentID ("plugin-search"); list.setComponentID ("plugin-results"); addButton.setComponentID ("plugin-add");
     search.onTextChange = [this] { rebuildItems(); }; search.addKeyListener (this);
     list.setRowHeight (46); list.setOutlineThickness (0);
+    list.addKeyListener (this);
     list.setColour (juce::ListBox::backgroundColourId, theme::background);
     list.getVerticalScrollBar().setColour (juce::ScrollBar::thumbColourId, theme::border);
     theme::primary (addButton); addButton.onClick = [this] { chooseRow (list.getSelectedRow()); };
