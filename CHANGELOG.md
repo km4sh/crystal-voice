@@ -1,8 +1,29 @@
 # Changelog
 
-All notable changes to MicVST are documented here.
+All notable changes to Crystal Voice and its MicVST upstream are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 project follows [Semantic Versioning](https://semver.org/).
+
+## 1.2.0 - Unreleased
+
+### Added
+- Crystal Voice identity, icons and separate settings/startup/update source.
+- New source/destination cards, effect cards, searchable effect window and error states.
+- Physical input channel selection, master mute/bypass and automatic mono fan-out.
+- Regression coverage for actual graph processing, routing, state recovery and picker interactions.
+
+### Fixed
+- Cable discovery changing the active audio route and silent failures when changing devices.
+- Virtual/loopback default microphones being selected on first launch.
+- Missing effects losing their order and saved presets; ambiguous VST3 bundle identities.
+- Stale asynchronous row actions and repeat editor windows.
+- Corrupted configuration recovery and repeated scans of unchanged plugin bundles.
+- Background meter work and excessive visible startup-registry polling.
+
+### Changed
+- Settings and scan cache use atomic replacement; valid previous configs have a recovery backup.
+- Startup imports an existing MicVST setup once, while retaining the original installation.
+- Windows build and release workflows target Crystal Voice and run CTest before publishing binaries.
 
 ## [1.1.1] - 2026-07-27
 

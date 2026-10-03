@@ -1,30 +1,39 @@
-name: build
+name: Windows build and tests
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, 'codex/**' ]
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: read
+concurrency:
+  group: windows-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  build:
+  windows:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
 
-      # Kein Generator gepinnt: windows-latest wechselt die VS-Version (aktuell VS2026);
-      # CMake nimmt automatisch das installierte Visual Studio des Runner-Images.
+      # Let CMake choose the Visual Studio version installed on the runner.
       - name: Configure
         run: cmake -S . -B build -A x64
 
       - name: Build
-        run: cmake --build build --config Release --target MicVST MicVSTTests
+        run: cmake --build build --config Release --target CrystalVoice MicVSTTests --parallel 4
 
       - name: Test
-        run: ./build/MicVSTTests_artefacts/Release/MicVSTTests.exe
+        run: ctest --test-dir build -C Release --output-on-failure
 
       - name: Upload exe
         uses: actions/upload-artifact@v4
         with:
-          name: MicVST
-          path: build/MicVST_artefacts/Release/MicVST.exe
+          name: CrystalVoice-windows-x64
+          if-no-files-found: error
+          path: |
+            build/CrystalVoice_artefacts/Release/CrystalVoice.exe
+            LICENSE
+            README.md
