@@ -127,6 +127,15 @@ juce::StringArray filterFilesNeedingScan (const juce::StringArray& allFiles,
         const bool forced = forceRescan.contains (f);
         if (! forced && list.isListingUpToDate (f, format))
             continue;
+        // Recognise cached inner binaries of VST3 bundles to prevent perpetual rescans.
+        if (! forced && juce::File (f).isDirectory())
+        {
+            bool found = false, stale = false;
+            for (const auto& type : list.getTypes())
+                if (juce::File (type.fileOrIdentifier).isAChildOf (juce::File (f)))
+                { found = true; stale = stale || format.pluginNeedsRescanning (type); }
+            if (found && ! stale) continue;
+        }
         // Grund + Zeitstempel loggen: macht den Dauer-Rescan-Fall in log.txt remote
         // diagnostizierbar (cache = gespeicherte mtime, datei = aktuelle effectiveModTime).
         juce::String detail;
@@ -136,7 +145,7 @@ juce::StringArray filterFilesNeedingScan (const juce::StringArray& allFiles,
         juce::Logger::writeToLog (juce::String ("Scan ")
             + (forced ? "(erzwungen): "
                       : list.getTypeForFile (f) == nullptr ? "(neu): " : "(geändert): ") + f + detail);
-        out.add (f);
+        if (! out.contains (f, true)) out.add (f);
     }
     return out;
 }

@@ -2,86 +2,58 @@
 #include <juce_audio_utils/juce_audio_utils.h>
 #include "audio/AudioEngine.h"
 
-// Plugin-Kette als Liste. Pro Zeile (von links nach rechts):
-//   - Drag-Handle (Punkte) zum Umsortieren per Drag&Drop,
-//   - Plugin-Name (Doppelklick öffnet den Editor),
-//   - gemeldete Latenz des Plugins (getLatencySamples),
-//   - Bypass-Schalter,
-//   - Mülleimer-Icon zum Entfernen.
-// Oben ein "+ Plugin"-Button (öffnet den Such-Picker; enthält auch die Built-ins).
 class PluginListView : public juce::Component, private juce::Timer
 {
 public:
-    explicit PluginListView (AudioEngine& engine);
+    explicit PluginListView (AudioEngine&);
     ~PluginListView() override;
+    void paint (juce::Graphics&) override;
     void resized() override;
-
 private:
-    static constexpr int rowH = 30;
-
-    void timerCallback() override;      // hält die angezeigte Plugin-Latenz aktuell
-
-    void showPluginPicker();            // "+ Plugin": Picker mit Suchfeld (CallOutBox)
+    static constexpr int rowH = 64, rowPitch = 72;
+    void timerCallback() override;
+    void showPluginPicker();
     void addFromPicker (const juce::PluginDescription&);
-    void showFolderMenu();              // Custom-VST3-Ordner verwalten (hinzufügen/entfernen)
-    void chooseFolder();                // VST3-Ordner per Dialog wählen + rescannen
-    void openEditor (int row);
-    void rebuildRows();                 // Zeilen-Components aus der aktuellen Kette neu erzeugen
-    void commitChange();                // rebuildGraph + persistieren + Zeilen aktualisieren
-    void requestRemove (int index);     // verzögertes Entfernen (Row löscht sich sonst selbst)
-    void requestMove (int from, int to);
-    void toggleBypass (int index);
-
-    // Per-Row gezeichneter Mülleimer-Button.
-    struct TrashButton : juce::Button
-    {
-        TrashButton() : juce::Button ("Remove") {}
-        void paintButton (juce::Graphics&, bool highlighted, bool down) override;
-    };
-
-    // Eine Zeile: Handle + Name + Bypass + Trash. Das Handle-/Namensfeld behandelt
-    // Drag (Umsortieren) und Doppelklick (Editor); Bypass/Trash sind Kind-Buttons.
+    void showFolderMenu();
+    void chooseFolder();
+    void openEditor (juce::uint32 id);
+    void rebuildRows();
+    void commitChange();
+    void requestRemove (juce::uint32 id);
+    void requestMove (juce::uint32 id, int destination);
+    void toggleBypass (juce::uint32 id);
+    void showRowMenu (juce::uint32 id, juce::Component* target);
+    void updateScanUi();
     struct Row : juce::Component
     {
-        Row (PluginListView& ownerIn, int idx);
+        Row (PluginListView&, int index);
         void paint (juce::Graphics&) override;
         void resized() override;
         void mouseDown (const juce::MouseEvent&) override;
         void mouseDrag (const juce::MouseEvent&) override;
-        void mouseUp   (const juce::MouseEvent&) override;
+        void mouseUp (const juce::MouseEvent&) override;
         void mouseDoubleClick (const juce::MouseEvent&) override;
-        bool overHandle (juce::Point<int> p) const;
-
         PluginListView& owner;
-        int index;
-        juce::TextButton bypassBtn;
-        TrashButton trashBtn;
+        juce::uint32 id;
+        int index, grabOffsetY = 0;
         bool dragging = false;
-        int  grabOffsetY = 0;
+        juce::TextButton openButton { "Open" }, enabledButton { "On" }, moreButton { "..." };
     };
-
-    // Editor-Fenster, das sich beim Schließen selbst aus der Liste entfernt.
     struct EditorWindow : juce::DocumentWindow
     {
-        EditorWindow (const juce::String& name, std::function<void (EditorWindow*)> onCloseIn)
-            : juce::DocumentWindow (name, juce::Colours::black, juce::DocumentWindow::closeButton),
-              onClose (std::move (onCloseIn)) {}
-        void closeButtonPressed() override { if (onClose) onClose (this); }
+        EditorWindow (const juce::String&, juce::uint32, std::function<void (EditorWindow*)>);
+        void closeButtonPressed() override;
+        juce::uint32 entryId;
         std::function<void (EditorWindow*)> onClose;
     };
-
-    void updateScanUi();                 // Statuszeile/Skip-Hinweis + addBtn-Enable aktualisieren
-    juce::Label scanLabel;               // "Scanning plugins... 12/34 - Name"
-    double scanProgress = 0.0;           // 0..1, von ProgressBar per Referenz gelesen
-    juce::ProgressBar scanBar { scanProgress };
-    juce::TextButton skipScanBtn { "Skip" };   // überspringt das aktuell scannende Plugin
-    juce::Label skipLabel;               // "N plugin(s) skipped - hover for details"
-
     AudioEngine& engine;
-    juce::TextButton addBtn { "+ Plugin" };
-    juce::TextButton manageFoldersBtn { "Manage VST3 Folders" };
+    juce::TextButton addButton { "+ Add effect" }, foldersButton { "Library" }, skipScanButton { "Skip" };
+    juce::Label scanLabel, noticeLabel;
+    double scanProgress = 0.0;
+    juce::ProgressBar scanBar { scanProgress };
     juce::Viewport viewport;
-    juce::Component rowsHolder;          // Inhalt des Viewports (trägt die Zeilen)
+    juce::Component rowsHolder;
     juce::OwnedArray<Row> rows;
-    juce::OwnedArray<EditorWindow> editorWindows;
+    juce::OwnedArray<EditorWindow> editors;
+    std::unique_ptr<juce::DocumentWindow> pickerWindow;
 };

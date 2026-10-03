@@ -1,4 +1,5 @@
 #include "ui/LevelMeterComponent.h"
+#include "ui/Theme.h"
 
 namespace
 {
@@ -9,8 +10,8 @@ namespace
 void LevelMeterComponent::paint (juce::Graphics& g)
 {
     auto b = getLocalBounds().toFloat();
-    g.setColour (juce::Colours::black);
-    g.fillRect (b);
+    g.setColour (theme::background);
+    g.fillRoundedRectangle (b, 4);
 
     auto dbX = [&] (float db) { return b.getX() + meterScale::dbToNorm (db) * b.getWidth(); };
 
@@ -24,21 +25,21 @@ void LevelMeterComponent::paint (juce::Graphics& g)
     const float rmsX  = dbX (rmsDb);
     if (rmsX > b.getX())
     {
-        g.setColour (juce::Colours::limegreen);
-        g.fillRect (juce::Rectangle<float> (b.getX(), b.getY(), rmsX - b.getX(), b.getHeight()));
+        g.setColour (level.peak >= 0.999f ? theme::danger : theme::accent);
+        g.fillRoundedRectangle (juce::Rectangle<float> (b.getX(), b.getY(), rmsX - b.getX(), b.getHeight()), 3);
     }
 
     // Peak-Hold als vertikale gelbe Linie.
     const float peakDb = juce::Decibels::gainToDecibels (level.peak, meterScale::minDb);
     if (peakDb > meterScale::minDb)
     {
-        g.setColour (juce::Colours::yellow);
+        g.setColour (theme::warning);
         const float px = dbX (peakDb);
         g.drawLine (px, b.getY(), px, b.getBottom(), 2.0f);
     }
 
-    g.setColour (juce::Colours::white.withAlpha (0.25f));
-    g.drawRect (b, 1.0f);
+    g.setColour (theme::border);
+    g.drawRoundedRectangle (b.reduced (0.5f), 4, 1.0f);
 }
 
 void DbScaleComponent::paint (juce::Graphics& g)

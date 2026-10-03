@@ -41,7 +41,8 @@ bool save (const juce::File& file, const juce::KnownPluginList& list,
            const juce::Array<SkippedPlugin>& skipped)
 {
     file.getParentDirectory().createDirectory();
-    return toXml (list, skipped)->writeTo (file);
+    juce::TemporaryFile temporary (file);
+    return toXml (list, skipped)->writeTo (temporary.getFile()) && temporary.overwriteTargetFileWithTemporary();
 }
 
 bool load (const juce::File& file, juce::KnownPluginList& list,

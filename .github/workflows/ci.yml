@@ -1,0 +1,25 @@
+name: Windows build and tests
+on:
+  push:
+    branches: [ main, 'codex/**' ]
+  pull_request:
+permissions:
+  contents: read
+concurrency:
+  group: windows-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -S . -B build -A x64
+      - name: Build
+        run: cmake --build build --config Release --target CrystalVoice MicVSTTests --parallel 4
+      - name: Regression tests
+        run: ctest --test-dir build -C Release --output-on-failure
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CrystalVoice-windows-x64
+          path: build/CrystalVoice_artefacts/Release/CrystalVoice.exe

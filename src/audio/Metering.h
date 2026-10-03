@@ -11,6 +11,7 @@ LevelReading computeLevel (const juce::AudioBuffer<float>& buffer);
 class LevelMeter
 {
 public:
+    void reset() { rms_.store (0.0f); peak_.store (0.0f); }
     void process (const juce::AudioBuffer<float>& buffer)
     {
         const auto r = computeLevel (buffer);

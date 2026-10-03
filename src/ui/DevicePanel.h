@@ -2,54 +2,26 @@
 #include <juce_audio_utils/juce_audio_utils.h>
 #include "audio/AudioEngine.h"
 
-// Kleines "?"-Icon, das bei Hover einen Hilfetext zeigt (via TooltipWindow im MainComponent).
-struct InfoIcon : juce::Component, juce::SettableTooltipClient
-{
-    void paint (juce::Graphics& g) override
-    {
-        auto b = getLocalBounds().toFloat();
-        const float d = juce::jmin (b.getWidth(), b.getHeight()) - 1.5f;   // Durchmesser = kleinere Seite
-        auto circle = juce::Rectangle<float> (d, d).withCentre (b.getCentre());
-        g.setColour (juce::Colours::grey);
-        g.drawEllipse (circle, 1.2f);
-        g.setColour (juce::Colours::lightgrey);
-        g.setFont (d * 0.66f);
-        g.drawText ("?", getLocalBounds(), juce::Justification::centred);
-    }
-};
-
-// Kompakte Geräteauswahl: Input zuerst, dann Output (Output kennt "(none)").
-// Darunter optional eine Buffer-Zeile: nur sichtbar, wenn das Gerätepaar im
-// Low-Latency-Modus mehr als eine Buffer-Größe meldet ("Auto" = Geräte-Default).
-// Zuunterst eine dauerhaft sichtbare Info-Zeile (Active / Samplerate / Buffer / Latenz).
-// Bewusst KEIN Input-Pegelmeter (oben gibt es den großen) und keine Kanal-Listen
-// (MicVST verwaltet die Kanäle selbst auf Stereo).
-class DevicePanel : public juce::Component,
-                    private juce::ChangeListener,
-                    private juce::Timer
+class DevicePanel : public juce::Component, private juce::ChangeListener, private juce::Timer
 {
 public:
     explicit DevicePanel (AudioEngine&);
     ~DevicePanel() override;
+    void paint (juce::Graphics&) override;
     void resized() override;
-
-    int preferredHeight() const;   // 3 Zeilen, +1 wenn die Buffer-Zeile sichtbar ist
-
+    int preferredHeight() const { return 214; }
 private:
     void changeListenerCallback (juce::ChangeBroadcaster*) override;
     void timerCallback() override;
-    void refresh();        // Input/Output-Combos aus dem aktuellen Setup neu füllen
-    void updateStatus();   // nur die Info-Zeile (Active / Samplerate / Buffer / Latenz)
-    void apply();          // aktuelle Auswahl -> AudioEngine
-
+    void refresh();
+    void updateStatus();
+    void applyRoute (const juce::String& input, const juce::String& output, double rate = 0, int buffer = 0);
     AudioEngine& engine;
-    juce::Label    inLabel  { {}, "Input" },  outLabel { {}, "Output" };
-    InfoIcon       inInfo, outInfo;
-    juce::ComboBox inBox, outBox;
-    juce::Label    bufLabel { {}, "Buffer" };
-    InfoIcon       bufInfo;
-    juce::ComboBox bufBox;
-    juce::Label    statusLabel;   // Active / Samplerate / Buffer / Latenz (immer sichtbar)
-
-    bool updating = false;        // Re-entrancy-Guard beim Befüllen
+    juce::ComboBox inputBox, outputBox, channelBox, rateBox, bufferBox;
+    juce::TextButton retryButton { "Retry" };
+    juce::Label inputHint, outputHint, rateLabel { {}, "Sample rate" }, bufferLabel { {}, "Buffer" }, statusLabel;
+    juce::Array<double> rates;
+    juce::Array<int> buffers;
+    juce::Rectangle<int> inputCard, outputCard;
+    bool updating = false, refreshPending = false;
 };

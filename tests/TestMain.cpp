@@ -1,4 +1,5 @@
 #include <juce_core/juce_core.h>
+#include <iostream>
 #include "audio/Metering.h"
 
 // Smoke-Test: beweist, dass der UnitTestRunner läuft.
@@ -62,11 +63,12 @@ struct GraphConnectionsTest : juce::UnitTest
         const NodeID p1   { 10 };
         const NodeID p2   { 11 };
 
-        beginTest ("empty mono chain: input(1out) -> output(2in) = 1 Kanal");
+        beginTest ("mono voice reaches both channels of a stereo virtual microphone");
         {
             auto c = computeChainConnections ({ { in, 0, 1 }, { out, 2, 0 } });
-            expectEquals ((int) c.size(), 1);
+            expectEquals ((int) c.size(), 2);
             expect (c[0] == ChannelConnection { in, 0, out, 0 });
+            expect (c[1] == ChannelConnection { in, 0, out, 1 });
         }
 
         beginTest ("empty stereo chain: input(2out) -> output(2in) = 2 Kanäle");
@@ -152,13 +154,18 @@ static PersistenceTest persistenceTest;
 
 int main (int, char**)
 {
+    juce::ScopedJuceInitialiser_GUI initialiseJuce;
     juce::UnitTestRunner runner;
     runner.setAssertOnFailure (false);
     runner.runAllTests();
 
-    int failures = 0;
+    int failures = 0, passes = 0;
     for (int i = 0; i < runner.getNumResults(); ++i)
+    {
         failures += runner.getResult (i)->failures;
+        passes += runner.getResult (i)->passes;
+    }
+    std::cout << runner.getNumResults() << " cases, " << passes << " assertions passed, " << failures << " failed\n";
 
     if (failures > 0)
     {

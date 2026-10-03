@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(MicVST VERSION 1.1.1 LANGUAGES C CXX)
+project(CrystalVoice VERSION 1.2.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -41,11 +41,12 @@ target_link_libraries(MicVSTCore PUBLIC
 )
 
 # --- GUI application ---
-juce_add_gui_app(MicVST
-    PRODUCT_NAME "MicVST"
-    COMPANY_NAME "MicVST"
-    ICON_BIG   "${CMAKE_CURRENT_SOURCE_DIR}/resources/iconDarkMode.png"
-    ICON_SMALL "${CMAKE_CURRENT_SOURCE_DIR}/resources/iconDarkMode.png"
+juce_add_gui_app(CrystalVoice
+    PRODUCT_NAME "CrystalVoice"
+    COMPANY_NAME "Crystal Voice"
+    BUNDLE_ID "com.km4sh.crystalvoice"
+    ICON_BIG   "${CMAKE_CURRENT_SOURCE_DIR}/resources/crystal-voice.png"
+    ICON_SMALL "${CMAKE_CURRENT_SOURCE_DIR}/resources/crystal-voice.png"
 )
 
 # Beide Icon-Varianten als Binärdaten einbetten (für das theme-adaptive Tray-Icon).
@@ -54,7 +55,7 @@ juce_add_binary_data(MicVSTData SOURCES
     resources/iconLightMode.png
 )
 
-target_sources(MicVST PRIVATE
+target_sources(CrystalVoice PRIVATE
     src/Main.cpp
     src/audio/AudioEngine.cpp
     src/audio/PluginChain.cpp
@@ -66,7 +67,7 @@ target_sources(MicVST PRIVATE
     src/ui/TrayIcon.cpp
     src/state/AutostartRegistry.cpp
 )
-target_compile_definitions(MicVST PRIVATE
+target_compile_definitions(CrystalVoice PRIVATE
     JUCE_WASAPI=1
     JUCE_DIRECTSOUND=0
     JUCE_ASIO=0
@@ -74,7 +75,7 @@ target_compile_definitions(MicVST PRIVATE
     JUCE_USE_CURL=0
     JUCE_WEB_BROWSER=0
 )
-target_link_libraries(MicVST PRIVATE
+target_link_libraries(CrystalVoice PRIVATE
     MicVSTCore
     MicVSTData
     juce::juce_audio_devices
@@ -91,12 +92,27 @@ target_sources(MicVSTTests PRIVATE
     tests/TestMain.cpp
     tests/ScanTests.cpp
     tests/PickerTests.cpp
+    tests/StabilityTests.cpp
+    tests/UiTests.cpp
+    src/ui/PluginPicker.cpp
+    src/audio/PluginChain.cpp
+    src/audio/AudioEngine.cpp
 )
+
+enable_testing()
+add_test(NAME CrystalVoiceRegression COMMAND $<TARGET_FILE:MicVSTTests>)
 target_compile_definitions(MicVSTTests PRIVATE
     JUCE_PLUGINHOST_VST3=1
+    JUCE_WASAPI=1
+    JUCE_DIRECTSOUND=0
+    JUCE_ASIO=0
+    JUCE_USE_CURL=0
+    JUCE_WEB_BROWSER=0
 )
 target_link_libraries(MicVSTTests PRIVATE
     MicVSTCore
+    juce::juce_audio_devices
+    juce::juce_audio_utils
     juce::juce_audio_processors
     juce::juce_core
     juce::juce_recommended_config_flags

@@ -4,6 +4,8 @@
 #include "state/AutostartRegistry.h"
 #include "ui/MainComponent.h"
 #include "ui/TrayIcon.h"
+#include "ui/Theme.h"
+#include "audio/DeviceSelection.h"
 
 #if JUCE_WINDOWS
  // Bewusst kein <windows.h>: das Header pollutet nachfolgende JUCE-Header (Makrokonflikte
@@ -34,17 +36,18 @@ static unsigned int findTypesWithSehGuard (juce::VST3PluginFormat& format,
 }
 #endif
 
-class MicVSTApplication : public juce::JUCEApplication
+class CrystalVoiceApplication : public juce::JUCEApplication
 {
 public:
-    const juce::String getApplicationName() override    { return "MicVST"; }
-    const juce::String getApplicationVersion() override { return "1.1.1"; }
+    const juce::String getApplicationName() override    { return "Crystal Voice"; }
+    const juce::String getApplicationVersion() override { return "1.2.0"; }
 
     // Kind-Scanprozesse (--scan) laufen parallel zur Haupt-Instanz und dürfen nicht
     // von der Single-Instance-Logik weggefangen werden.
     bool moreThanOneInstanceAllowed() override
     {
-        return juce::JUCEApplicationBase::getCommandLineParameterArray().contains ("--scan");
+        const auto args = juce::JUCEApplicationBase::getCommandLineParameterArray();
+        return args.contains ("--scan") || args.contains ("--render-preview");
     }
 
     // Kindmodus: genau EIN VST3 scannen und die Beschreibungen als XML in die --out-Datei
@@ -96,20 +99,41 @@ public:
             return;
         }
 
-        auto logFile = juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
-                          .getChildFile ("MicVST").getChildFile ("log.txt");
+        const auto arguments = juce::JUCEApplicationBase::getCommandLineParameterArray();
+        for (int i = 0; i + 1 < arguments.size(); ++i)
+            if (arguments[i] == "--profile") setSettingsDirectory (juce::File (arguments[i + 1].unquoted()));
+
+        // A fork has its own settings and startup identity. Import an existing setup
+        // once, without modifying the original installation or opting into updates.
+        if (! configFile().existsAsFile()
+            && ! configFile().getSiblingFile ("config.xml.bak").existsAsFile() && ! arguments.contains ("--profile"))
+        {
+            const auto legacy = juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory).getChildFile ("MicVST");
+            if (auto xml = juce::parseXML (legacy.getChildFile ("config.xml")))
+                if (xml->hasTagName ("MicVST"))
+                {
+                    auto imported = fromValueTree (juce::ValueTree::fromXml (*xml));
+                    imported.updateCheckEnabled = false; imported.updateCheckAsked = true;
+                    imported.windowState.clear();
+                    if (saveState (imported)) legacy.getChildFile ("plugin_cache.xml").copyFileTo (settingsDirectory().getChildFile ("plugin_cache.xml"));
+                }
+        }
+        juce::LookAndFeel::setDefaultLookAndFeel (&lookAndFeel);
+        auto logFile = settingsDirectory().getChildFile ("log.txt");
         logFile.getParentDirectory().createDirectory();
-        logger.reset (new juce::FileLogger (logFile, "MicVST Log"));
+        logger.reset (new juce::FileLogger (logFile, "Crystal Voice Log"));
         juce::Logger::setCurrentLogger (logger.get());
 
-        const bool silent = commandLine.contains ("--tray");
+        const bool renderPreview = arguments.contains ("--render-preview");
+        const bool silent = commandLine.contains ("--tray") || renderPreview;
 
         engine = std::make_unique<AudioEngine>();
 
         // Gespeicherten Zustand laden; NUR beim allerersten Start (noch keine config.xml)
         // Devices vorbelegen. Sobald eine Config existiert, gilt sie verbatim — sonst würde
         // eine bewusst auf "none" gesetzte Output-Auswahl beim Neustart wieder überschrieben.
-        const bool firstRun = ! configFile().existsAsFile();
+        const bool firstRun = ! configFile().existsAsFile()
+            && ! configFile().getSiblingFile ("config.xml.bak").existsAsFile();
         MicVSTState state = loadState();
 
         // Auto-Update-Check-Zustand übernehmen (Default: aus, nie gefragt).
@@ -138,15 +162,32 @@ public:
                 type->scanForDevices();
                 auto ins = type->getDeviceNames (true);
                 const int def = type->getDefaultDeviceIndex (true);
-                state.inputDevice = juce::isPositiveAndBelow (def, ins.size()) ? ins[def]
-                                  : (ins.isEmpty() ? juce::String() : ins[0]);
+                state.inputDevice = preferredMicrophone (ins, def);
             }
             juce::Logger::writeToLog ("Input = " + state.inputDevice);
         }
         engine->applyState (state);
 
-        mainWindow = std::make_unique<MainWindow> ("MicVST", *engine, state.windowState);
+        mainWindow = std::make_unique<MainWindow> ("Crystal Voice", *engine, state.windowState);
         mainWindow->setVisible (! silent);   // Autostart (--tray): unsichtbar, nur Tray
+
+        // Developer snapshot: render this application's own components, with an
+        // explicit isolated profile. No screen capture or desktop input is involved.
+        if (renderPreview)
+        {
+            const int index = arguments.indexOf ("--render-preview");
+            bool ok = false;
+            if (arguments.contains ("--profile") && index + 1 < arguments.size())
+            {
+                auto* component = mainWindow->getContent(); component->setSize (900, 828);
+                const auto image = component->createComponentSnapshot (component->getLocalBounds());
+                juce::File output (arguments[index + 1].unquoted()); output.getParentDirectory().createDirectory();
+                juce::FileOutputStream stream (output); juce::PNGImageFormat png;
+                ok = stream.openedOk() && stream.setPosition (0) && stream.truncate().wasOk()
+                    && png.writeImageToStream (image, stream);
+            }
+            setApplicationReturnValue (ok ? 0 : 1); quit(); return;
+        }
 
         tray = std::make_unique<TrayIcon>();
         tray->onToggleWindow = [this] { toggleWindow(); };
@@ -165,8 +206,6 @@ public:
         // ein direktes saveState(captureState()) in der UI würde windowState/Update-Check resetten.
         engine->onStateChanged  = [this] { persistState(); };
 
-        engine->onFactoryResetRequested = [this] { factoryReset(); };
-
         // --- Auto-Update-Check verdrahten ---
         if (auto* mc = mainWindow->getContent())
         {
@@ -179,22 +218,20 @@ public:
                 persistState();
                 if (tray != nullptr)
                     tray->showInfoBubble ("Update available",
-                        "MicVST " + latestVersion + " is available - click the version number to update.");
+                        "Crystal Voice " + latestVersion + " is available - click the version number to update.");
             };
             // Bei aktivem Check sofort einen Lauf starten (auch im stillen Autostart -> Tray-Bubble).
             mc->setUpdateCheckEnabled (updateCheckEnabled, true);
         }
 
         // Altes Dead-Man's-Pedal aufräumen (ersetzt durch Skip-Liste im plugin_cache.xml).
-        juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
-            .getChildFile ("MicVST").getChildFile ("plugin_scan.tmp").deleteFile();
+        settingsDirectory().getChildFile ("plugin_scan.tmp").deleteFile();
 
         // Fenster + Tray stehen -> jetzt (und erst jetzt) im Hintergrund scannen.
         engine->startBackgroundScan();
 
-        // Erststart: einmalig nach Zustimmung fragen (nur mit sichtbarem Fenster).
-        if (! silent && ! updateCheckAsked)
-            askUpdateConsent();
+        // Updates remain off until explicitly enabled in the footer; no startup modal.
+        if (! updateCheckAsked) { updateCheckAsked = true; persistState(); }
     }
 
     void anotherInstanceStarted (const juce::String&) override
@@ -215,58 +252,20 @@ public:
         engine = nullptr;
         juce::Logger::setCurrentLogger (nullptr);
         logger = nullptr;
+        juce::LookAndFeel::setDefaultLookAndFeel (nullptr);
     }
 
 private:
     // Engine-Zustand (Geräte/Plugins) + Fenstergröße/-position + Update-Check-Zustand speichern.
     void persistState()
     {
-        if (suppressPersist || engine == nullptr) return;
+        if (engine == nullptr) return;
         auto s = engine->captureState();
         if (mainWindow != nullptr) s.windowState = mainWindow->getWindowStateAsString();
         s.updateCheckEnabled  = updateCheckEnabled;
         s.updateCheckAsked    = updateCheckAsked;
         s.lastNotifiedVersion = lastNotifiedVersion;
         saveState (s);
-    }
-
-    // "Reset app (clear all data)": Einstellungen + Plugin-Cache + Tray-Hinweis-Marker
-    // löschen und die App beenden. Kein Auto-Relaunch (Single-Instance-Logik würde die
-    // neue Instanz blocken); der Dialog kündigt den manuellen Neustart an. Der
-    // Autostart-Registry-Eintrag bleibt bewusst erhalten (sichtbare, eigene Einstellung).
-    void factoryReset()
-    {
-        suppressPersist = true;
-        configFile().deleteFile();
-        AudioEngine::pluginCacheFile().deleteFile();
-        juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
-            .getChildFile ("MicVST").getChildFile ("tray_hint_shown").deleteFile();
-        juce::Logger::writeToLog ("Factory-Reset: Daten gelöscht, App beendet sich");
-        systemRequestedQuit();
-    }
-
-    // Einmaliges Erststart-Popup: Zustimmung zum Update-Check einholen. Egal wie der Nutzer
-    // entscheidet -> "gefragt" wird gemerkt, also kommt der Dialog nie wieder.
-    void askUpdateConsent()
-    {
-        updateCheckAsked = true;
-        persistState();
-        juce::NativeMessageBox::showYesNoBox (
-            juce::MessageBoxIconType::QuestionIcon,
-            "Check for updates?",
-            "Should MicVST check GitHub for a newer version on startup?\n\n"
-            "Only a single request is sent to GitHub - no data is collected and there is no "
-            "auto-installer. You can change this anytime with the \"Auto-Update-Check\" box.",
-            nullptr,
-            juce::ModalCallbackFunction::create ([this] (int result)
-            {
-                const bool yes = (result == 1);
-                updateCheckEnabled = yes;
-                persistState();
-                if (mainWindow != nullptr)
-                    if (auto* mc = mainWindow->getContent())
-                        mc->setUpdateCheckEnabled (yes, true);   // bei Ja: gleich prüfen
-            }));
     }
 
     void toggleWindow()
@@ -283,18 +282,17 @@ private:
     void maybeShowTrayHint()
     {
         if (tray == nullptr) return;
-        auto marker = juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
-                        .getChildFile ("MicVST").getChildFile ("tray_hint_shown");
+        auto marker = settingsDirectory().getChildFile ("tray_hint_shown");
         if (marker.existsAsFile()) return;
         marker.create();
-        tray->showInfoBubble ("MicVST", "Still running in the tray - right-click the icon for options.");
+        tray->showInfoBubble ("Crystal Voice", "Audio is still running. Right-click the tray icon for options.");
     }
 
     class MainWindow : public juce::DocumentWindow
     {
     public:
         MainWindow (juce::String name, AudioEngine& engine, const juce::String& windowState)
-            : DocumentWindow (name, juce::Colours::darkgrey, DocumentWindow::allButtons)
+            : DocumentWindow (name, theme::background, DocumentWindow::allButtons)
         {
             setUsingNativeTitleBar (true);
             // resize-to-fit AUS: die Fenstergröße diktiert centreWithSize unten, nicht die
@@ -303,14 +301,14 @@ private:
             content = new MainComponent (engine);
             setContentOwned (content, false);
             setResizable (true, false);
-            // Mindestgröße = Startgröße (600x480); zusätzliche Höhe verlängert die Plugin-Liste.
-            setResizeLimits (600, 480, 1600, 1400);
+            // Keep routing controls readable; additional height extends the effect list.
+            setResizeLimits (800, 720, 1600, 1400);
             // Letzte Größe/Position wiederherstellen (innerhalb der Resize-Limits), sonst zentriert
             // auf Startgröße. restoreWindowStateFromString respektiert die gesetzten Limits.
             if (windowState.isNotEmpty())
                 restoreWindowStateFromString (windowState);
             else
-                centreWithSize (600, 480);
+                centreWithSize (900, 860);
         }
         std::function<void()> onHide;
         void closeButtonPressed() override { setVisible (false); if (onHide) onHide(); }
@@ -319,6 +317,7 @@ private:
         MainComponent* content = nullptr;   // gehört dem Fenster (setContentOwned), nur Zugriffszeiger
     };
 
+    CrystalLookAndFeel lookAndFeel;
     std::unique_ptr<juce::FileLogger> logger;
     std::unique_ptr<AudioEngine> engine;
     std::unique_ptr<MainWindow> mainWindow;
@@ -328,7 +327,6 @@ private:
     bool updateCheckEnabled = false;
     bool updateCheckAsked   = false;
     juce::String lastNotifiedVersion;
-    bool suppressPersist = false;   // Factory-Reset: nichts darf die gelöschte Config neu anlegen
 };
 
-START_JUCE_APPLICATION (MicVSTApplication)
+START_JUCE_APPLICATION (CrystalVoiceApplication)

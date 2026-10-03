@@ -19,12 +19,21 @@ public:
     ~AudioEngine() override;
 
     juce::String initialise (const juce::String& inputDeviceName,
-                             const juce::String& outputDeviceName);
+                             const juce::String& outputDeviceName, double sampleRate = 48000.0);
 
     // Laufzeit-Geräteumschaltung (vom DevicePanel): setzt Geräte/Samplerate/Buffer neu,
     // OHNE Graph + Plugin-Kette neu aufzubauen. sampleRate<=0 / bufferSize<=0 = unverändert.
-    void setDeviceConfig (const juce::String& input, const juce::String& output,
+    juce::String setDeviceConfig (const juce::String& input, const juce::String& output,
                           double sampleRate, int bufferSize);
+    juce::String setInputChannel (int channel);
+    int getInputChannel() const { return inputChannel; }
+    juce::String getDeviceError() const { return deviceError; }
+    const juce::AudioDeviceManager::AudioDeviceSetup& getRequestedSetup() const { return requestedSetup; }
+    void setMuted (bool on) { muted.store (on); requestPersist(); }
+    bool isMuted() const { return muted.load(); }
+    void setMasterBypass (bool on) { masterBypass.store (on); requestPersist(); }
+    bool isMasterBypassed() const { return masterBypass.load(); }
+    void retryMissingPlugins();
 
     // Buffer-Wunsch des Users in Samples; 0 = Auto (Geräte-Default-Periode).
     // Wird von applyState gesetzt und in captureState persistiert.
@@ -47,11 +56,6 @@ public:
     // kennt) — ein direktes saveState(captureState()) würde diese Felder zurücksetzen.
     std::function<void()> onStateChanged;
     void requestPersist() { if (onStateChanged) onStateChanged(); }
-
-    // Factory-Reset (UI-Menü): Die App löscht config + Plugin-Cache und beendet sich
-    // für einen frischen Erststart. Engine-seitig nur der Durchreich-Callback.
-    std::function<void()> onFactoryResetRequested;
-    void requestFactoryReset() { if (onFactoryResetRequested) onFactoryResetRequested(); }
 
     MicVSTDeviceManager&            getDeviceManager() { return deviceManager; }
     juce::AudioProcessorGraph&      getGraph()         { return graph; }
@@ -129,15 +133,21 @@ private:
     juce::KnownPluginList knownPlugins;
     juce::StringArray pluginFolders;   // zusätzliche VST3-Suchordner (persistiert)
     int preferredBufferSize = 0;   // Buffer-Wunsch des Users in Samples; 0 = Auto
+    int inputChannel = 0;
+    std::atomic<bool> muted { false }, masterBypass { false };
+    juce::AudioDeviceManager::AudioDeviceSetup requestedSetup;
+    juce::String deviceError;
+    bool applyingDevice = false;
+    bool reconnectAttempted = false;
     LevelMeter inputMeter, outputMeter;
 
     std::unique_ptr<ScanCoordinator> scanner;      // != nullptr solange ein Scan läuft
     bool rescanQueued = false;   // merkt einen während des Scans angeforderten Folgescan vor
     juce::Array<SkippedPlugin> skippedPlugins;     // persistiert im Cache
-    juce::Array<PluginEntryState> pendingPlugins;  // Ketten-Restore wartet auf Scan-Ende
     juce::StringArray scanRoots() const;           // JUCE-Default-VST3-Orte + Custom-Ordner
     juce::StringArray listVst3Files() const;       // Standard- + Custom-Ordner enumerieren
     void restoreChain (const juce::Array<PluginEntryState>& plugins);
+    void configureChannels (juce::AudioDeviceManager::AudioDeviceSetup&);
     void handleScanFinished (const ScanOutcome&);
     void pruneOutsideFolders();                    // Cache-Einträge entfernter Ordner löschen
 };

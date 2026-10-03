@@ -1,6 +1,7 @@
 #pragma once
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "audio/GraphConnections.h"
+#include "state/Persistence.h"
 #include <vector>
 
 // Verwaltet die geordnete VST3-Kette innerhalb eines AudioProcessorGraph.
@@ -13,8 +14,17 @@ public:
     static constexpr const char* monoToStereoId = "builtin:mono2stereo";
     static constexpr const char* stereoToMonoId = "builtin:stereo2mono";
 
-    struct Entry { NodeID node; juce::String fileOrId; bool bypassed = false;
-                   bool isBuiltIn() const { return fileOrId.startsWith ("builtin:"); } };
+    struct Entry
+    {
+        NodeID node;
+        juce::String fileOrId;
+        bool bypassed = false;
+        juce::String identifier, displayName, manufacturer, error;
+        juce::MemoryBlock savedState;
+        juce::uint32 id = 0;
+        bool isBuiltIn() const { return fileOrId.startsWith ("builtin:"); }
+        bool isUnavailable() const { return node == NodeID{}; }
+    };
 
     PluginChain (juce::AudioProcessorGraph& graph,
                  NodeID inputNode, NodeID outputNode);
@@ -29,6 +39,8 @@ public:
     // bzw. Stereo->Mono (2 in -> 1 out, gemittelt).
     void addMonoToStereo();
     void addStereoToMono();
+    void addUnavailable (const PluginEntryState&, const juce::String& error);
+    int indexOf (juce::uint32 id) const;
 
     void removePlugin (int index);
     void movePlugin (int from, int to);
@@ -36,13 +48,13 @@ public:
 
     const std::vector<Entry>& entries() const { return chain; }
 
-    // Baut alle Graph-Verbindungen neu auf. Pro Übergang werden min(quelle.outs, ziel.ins)
-    // Kanäle verbunden -> wechselnde Kanalbreite (z. B. ein Mono->Stereo-Glied) wird
-    // automatisch korrekt verdrahtet.
+    // Connect main buses in chain order. Mono fans out to destination channels;
+    // other layouts connect matching channels without auxiliary sidechain inputs.
     void rebuildConnections();
 
 private:
     juce::AudioProcessorGraph& graph;
     NodeID inputNode, outputNode;
     std::vector<Entry> chain;
+    juce::uint32 nextId = 1;
 };

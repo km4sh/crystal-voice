@@ -58,10 +58,10 @@ private:
     {
         Result r;
 
-        const juce::URL url ("https://api.github.com/repos/philipz794/MicVST/releases/latest");
+        const juce::URL url ("https://api.github.com/repos/km4sh/crystal-voice/releases/latest");
         // GitHub verlangt einen User-Agent, sonst 403. Accept-Header wie von der API empfohlen.
         const auto opts = juce::URL::InputStreamOptions (juce::URL::ParameterHandling::inAddress)
-                              .withExtraHeaders ("User-Agent: MicVST\r\n"
+                              .withExtraHeaders ("User-Agent: CrystalVoice\r\n"
                                                  "Accept: application/vnd.github+json\r\n")
                               .withConnectionTimeoutMs (4000);
 
@@ -81,7 +81,7 @@ private:
         r.latestVersion   = tag.startsWithIgnoreCase ("v") ? tag.substring (1) : tag;
         // html_url zeigt direkt auf die Release-Seite; Fallback auf /releases/latest.
         r.releaseUrl = json.getProperty ("html_url",
-                          "https://github.com/philipz794/MicVST/releases/latest").toString();
+                          "https://github.com/km4sh/crystal-voice/releases/latest").toString();
 
         auto cb = callback;
         juce::MessageManager::callAsync ([cb, r] { if (cb) cb (r); });

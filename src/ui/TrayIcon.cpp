@@ -4,7 +4,7 @@
 TrayIcon::TrayIcon()
 {
     updateIcon();                 // erzeugt erst das Icon (pimpl) ...
-    setIconTooltip ("MicVST");    // ... sonst verpufft der Tooltip (pimpl wäre noch null)
+    setIconTooltip ("Crystal Voice");
     juce::Desktop::getInstance().addDarkModeSettingListener (this);
 }
 
@@ -34,10 +34,14 @@ void TrayIcon::mouseDown (const juce::MouseEvent& e)
                    true, isAutostartOn && isAutostartOn());
         m.addSeparator();
         m.addItem (2, "Quit");
-        m.showMenuAsync (juce::PopupMenu::Options(), [this] (int result)
+        juce::Component::SafePointer<TrayIcon> safe (this);
+        m.showMenuAsync (juce::PopupMenu::Options(), [safe] (int result)
         {
-            if      (result == 1 && setAutostart && isAutostartOn) setAutostart (! isAutostartOn());
-            else if (result == 2 && onQuit)                        onQuit();
+            if (auto* self = safe.getComponent())
+            {
+                if (result == 1 && self->setAutostart && self->isAutostartOn) self->setAutostart (! self->isAutostartOn());
+                else if (result == 2 && self->onQuit) self->onQuit();
+            }
         });
     }
     else if (onToggleWindow)
