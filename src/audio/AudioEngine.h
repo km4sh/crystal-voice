@@ -26,6 +26,8 @@ public:
     juce::String setDeviceConfig (const juce::String& input, const juce::String& output,
                           double sampleRate, int bufferSize);
     juce::String setInputChannel (int channel);
+    juce::String retryAudioDevice();
+    void audioDeviceError (const juce::String&) override;
     int getInputChannel() const { return inputChannel; }
     juce::String getDeviceError() const { return deviceError; }
     const juce::AudioDeviceManager::AudioDeviceSetup& getRequestedSetup() const { return requestedSetup; }
@@ -139,6 +141,7 @@ private:
     juce::String deviceError;
     bool applyingDevice = false;
     bool reconnectAttempted = false;
+    std::shared_ptr<bool> alive = std::make_shared<bool> (true);
     LevelMeter inputMeter, outputMeter;
 
     std::unique_ptr<ScanCoordinator> scanner;      // != nullptr solange ein Scan läuft

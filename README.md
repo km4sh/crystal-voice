@@ -25,7 +25,7 @@ RNNoise needs **48 kHz**. The device panel exposes supported sample rates and bu
 
 - Consistent dark interface, readable routing cards, input/output meters, effect cards, explicit editing controls and a searchable effect window.
 - Mono channel 1, mono channel 2 or stereo input selection. Mono audio fans out to stereo destinations automatically; auxiliary sidechain buses are excluded from the voice route.
-- Cable discovery no longer switches the current audio device. Failed changes preserve the previous requested route. Hot-unplug keeps the selected device names instead of saving a fallback.
+- Cable discovery no longer switches the current audio device. Failed changes preserve the previous requested route. Hot-unplug keeps the selected device names instead of saving a fallback. Runtime driver errors reach the UI safely, and Retry reopens the device.
 - Missing or failed effects stay in their original positions with preset data preserved. Already cached effects can be used while scanning continues.
 - VST3 class identifiers are saved, including multiple effects inside the same bundle. Bundle/binary cache aliases no longer cause a scan on every launch.
 - Row actions use stable effect identities and safe callbacks. A plugin has one editor window; closing it saves its parameters. Plugins without a custom editor can use the generic parameter editor.

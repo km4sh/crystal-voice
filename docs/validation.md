@@ -4,12 +4,13 @@ Validated on 2026-10-04 with Windows 11 Pro x64 (build 26200), Visual Studio 202
 
 ## Automated checks
 
-Release application and test builds succeed. CTest reports **59 cases, 698 assertions passed, 0 failed**. Coverage includes:
+Release application and test builds succeed. CTest reports **62 cases, 705 assertions passed, 0 failed**. Coverage includes:
 
 - Actual audio graph processing, including mono fan-out, converter bypass, missing effects and stereo averaging.
 - Plugin scanning, timeouts, crash recovery, bundle/binary cache invalidation and forced retry.
 - State validation, VST3 class identity, failed device changes, retained missing-plugin presets and backup recovery.
 - Stable effect identities after reorder/removal and picker search, empty results, keyboard selection and cancellation.
+- Driver errors marshalled to the message thread, queued notifications discarded on shutdown and failed retries retaining the requested route.
 
 The documentation image is rendered from the real application components with a disconnected development profile. It validates layout and component rendering; it does not replace interactive desktop testing.
 

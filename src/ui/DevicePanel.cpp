@@ -7,8 +7,7 @@ DevicePanel::DevicePanel (AudioEngine& e) : engine (e)
         &inputBox, &outputBox, &channelBox, &rateBox, &bufferBox, &inputHint,
         &outputHint, &rateLabel, &bufferLabel, &statusLabel, &retryButton }) addAndMakeVisible (component);
     retryButton.onClick = [this]
-    { applyRoute (engine.getRequestedSetup().inputDeviceName, engine.getRequestedSetup().outputDeviceName,
-                   engine.getRequestedSetup().sampleRate, engine.getRequestedSetup().bufferSize); };
+    { engine.retryAudioDevice(); refresh(); };
     for (auto* label : { &inputHint, &outputHint, &rateLabel, &bufferLabel, &statusLabel })
     { label->setFont (theme::font (12)); label->setColour (juce::Label::textColourId, theme::muted); }
     inputHint.setText ("Choose a physical microphone or audio interface", juce::dontSendNotification);
@@ -127,7 +126,7 @@ void DevicePanel::updateStatus()
     statusLabel.setText (text, juce::dontSendNotification);
     statusLabel.setTooltip (text);
     statusLabel.setColour (juce::Label::textColourId, error.isNotEmpty() ? theme::warning : theme::muted);
-    const bool showRetry = error.isNotEmpty();
+    const bool showRetry = engine.getDeviceError().isNotEmpty();
     if (retryButton.isVisible() != showRetry) { retryButton.setVisible (showRetry); resized(); }
 }
 

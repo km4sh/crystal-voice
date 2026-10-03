@@ -4,6 +4,7 @@
 #include "audio/PluginChain.h"
 #include "audio/ScanCoordinator.h"
 #include "audio/DeviceSelection.h"
+#include <thread>
 
 struct StabilityTests : juce::UnitTest
 {
@@ -73,6 +74,11 @@ struct StabilityTests : juce::UnitTest
 
         beginTest ("failed device changes do not overwrite a saved route");
         expect (engine.setDeviceConfig ("Another nonexistent microphone", "Another nonexistent cable", 0, 0).isNotEmpty());
+        expectEquals (engine.captureState().inputDevice, state.inputDevice);
+        expectEquals (engine.captureState().outputDevice, state.outputDevice);
+
+        beginTest ("retrying an unavailable audio device retains the requested route");
+        expect (engine.retryAudioDevice().isNotEmpty());
         expectEquals (engine.captureState().inputDevice, state.inputDevice);
         expectEquals (engine.captureState().outputDevice, state.outputDevice);
 
@@ -168,3 +174,37 @@ struct GraphSignalTests : juce::UnitTest
     }
 };
 static GraphSignalTests graphSignalTests;
+
+struct DeviceErrorTests : juce::UnitTest
+{
+    DeviceErrorTests() : UnitTest ("Runtime device errors") {}
+    void runTest() override
+    {
+        beginTest ("driver errors are delivered to the UI on the message thread");
+        AudioEngine engine;
+        juce::StringArray errors;
+        bool callbackOnMainThread = true;
+        engine.onStatusChanged = [&]
+        {
+            callbackOnMainThread = callbackOnMainThread && juce::MessageManager::getInstance()->isThisTheMessageThread();
+            errors.add (engine.getDeviceError());
+        };
+        std::thread driver ([&] { engine.audioDeviceError ("The driver stopped streaming"); });
+        driver.join();
+        expect (errors.isEmpty());
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (30);
+        expect (errors.contains ("The driver stopped streaming"));
+        expect (callbackOnMainThread);
+
+        beginTest ("queued driver errors are discarded after shutdown");
+        bool calledAfterDestruction = false;
+        {
+            auto exiting = std::make_unique<AudioEngine>();
+            exiting->onStatusChanged = [&] { calledAfterDestruction = true; };
+            exiting->audioDeviceError ("A late driver error");
+        }
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (30);
+        expect (! calledAfterDestruction);
+    }
+};
+static DeviceErrorTests deviceErrorTests;

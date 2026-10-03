@@ -102,6 +102,7 @@ target_sources(MicVSTTests PRIVATE
 enable_testing()
 add_test(NAME CrystalVoiceRegression COMMAND $<TARGET_FILE:MicVSTTests>)
 target_compile_definitions(MicVSTTests PRIVATE
+    JUCE_MODAL_LOOPS_PERMITTED=1
     JUCE_PLUGINHOST_VST3=1
     JUCE_WASAPI=1
     JUCE_DIRECTSOUND=0

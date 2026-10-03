@@ -27,6 +27,7 @@ AudioEngine::AudioEngine()
 
 AudioEngine::~AudioEngine()
 {
+    *alive = false;
     scanner.reset();
     deviceManager.removeChangeListener (this);
     deviceManager.removeAudioCallback (this);
@@ -180,6 +181,27 @@ juce::String AudioEngine::setInputChannel (int channel)
     const auto error = setDeviceConfig (requestedSetup.inputDeviceName, requestedSetup.outputDeviceName, 0, 0);
     if (error.isNotEmpty()) inputChannel = previous;
     return error;
+}
+
+juce::String AudioEngine::retryAudioDevice()
+{
+    reconnectAttempted = true;
+    deviceManager.closeAudioDevice();
+    return setDeviceConfig (requestedSetup.inputDeviceName, requestedSetup.outputDeviceName,
+                            requestedSetup.sampleRate, requestedSetup.bufferSize);
+}
+
+void AudioEngine::audioDeviceError (const juce::String& error)
+{
+    // The driver may report errors off the message thread. Queued notifications
+    // must not access a destroyed engine, and never touch UI from the audio thread.
+    juce::MessageManager::callAsync ([this, guard = alive, error]
+    {
+        if (! *guard) return;
+        deviceError = error.isNotEmpty() ? error : "The audio device stopped unexpectedly.";
+        juce::Logger::writeToLog ("Audio device error: " + deviceError);
+        if (onStatusChanged) onStatusChanged();
+    });
 }
 
 juce::String AudioEngine::setDeviceConfig (const juce::String& input, const juce::String& output,

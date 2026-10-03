@@ -14,6 +14,7 @@ project follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 - Cable discovery changing the active audio route and silent failures when changing devices.
+- Runtime audio driver failures not reaching the interface, and Retry not reopening an existing device.
 - Virtual/loopback default microphones being selected on first launch.
 - Missing effects losing their order and saved presets; ambiguous VST3 bundle identities.
 - Stale asynchronous row actions and repeat editor windows.
