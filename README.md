@@ -14,23 +14,23 @@ The screenshot is rendered from the real application components with an isolated
 
 1. Install a virtual audio cable, such as [VB-CABLE](https://vb-audio.com/Cable/).
 2. Run `CrystalVoice.exe`. Choose your physical **Microphone**, then choose **CABLE Input** as the destination. For an audio interface, select the correct physical input channel below the microphone.
-3. Click **Add effect**. Search VST3 effects by name or manufacturer; press Enter or click Add. Use **Open** to edit a plugin, **On/Off** to enable it, and the grip or row menu to reorder it.
+3. Click **[ + ADD ]**. Search VST3 effects by name or manufacturer; press Enter or click Add. Use **[ EDIT ]** to edit a plugin, **ON/OFF** to enable it, and the grip or row menu to reorder it.
 4. In the game, chat or streaming application, select **CABLE Output** as the microphone.
 
-**Mute mic** silences the outgoing signal. **Bypass effects** sends the dry microphone for comparison. Closing the window keeps audio running in the tray; right-click the tray icon to quit. Enable **Start with Windows** after placing the executable in a permanent folder.
+**[ MUTE MIC ]** silences the outgoing signal. **[ BYPASS ]** sends the dry microphone for comparison. Closing the window keeps audio running in the tray; right-click the tray icon to quit. Enable **Start with Windows** after placing the executable in a permanent folder.
 
 RNNoise needs **48 kHz**. The device panel exposes supported sample rates and buffer sizes, shows errors inline and offers Retry. Reported latency is an estimate of the host path; the cable, receiving application and network add their own delay.
 
 ## What changed from MicVST
 
-- Consistent dark interface, readable routing cards, input/output meters, effect cards, explicit editing controls and a searchable effect window.
+- A console interface inspired by threshold-34: black surfaces, green/cyan accents, square panels, an integrated title bar and embedded JetBrains Mono Regular/Medium. Routing stays on the left; segmented input/output meters and effects stay on the right. The backdrop is static.
 - Mono channel 1, mono channel 2 or stereo input selection. Mono audio fans out to stereo destinations automatically; auxiliary sidechain buses are excluded from the voice route.
 - Cable discovery no longer switches the current audio device. Failed changes preserve the previous requested route and WASAPI mode. Hot-unplug keeps the selected device names instead of saving a fallback. Runtime driver errors reach the UI safely; old errors are discarded after a restart. Low-latency open failures retry the same endpoints in shared mode.
 - Missing or failed effects stay in their original positions with preset data preserved. Already cached effects can be used while scanning continues. The effect picker updates with the library and retains its search and selected VST3 class.
 - VST3 class identifiers are saved, including multiple effects inside the same bundle. Bundle/binary cache aliases no longer cause a scan on every launch.
 - Row actions use stable effect identities and safe callbacks. A plugin has one editor window; closing it saves its parameters. Plugins without a custom editor can use the generic parameter editor.
 - Settings and the scan cache are written atomically. A valid previous settings file is kept as `config.xml.bak` and used if the main file is damaged.
-- Meters stop refreshing when the window is hidden. Startup registry reads happen once per second while visible, rather than every meter frame.
+- Meters follow window visibility, including first launch and returning from the tray, and stop refreshing when hidden. Startup registry reads happen once per second while visible, rather than every meter frame.
 - The fork has its own config folder, startup entry and update source. It imports an existing MicVST setup on first normal launch without changing the original files.
 
 ## Build and test
@@ -72,3 +72,5 @@ Only **VST3 effects** are supported. Plugins and virtual cable drivers must be i
 ## License
 
 GNU GPL v3.0; see [LICENSE](LICENSE). Original MicVST copyright (C) 2026 Philip Zimmermann. This fork retains the original attribution and license. JUCE, plugins and virtual cable software are subject to their own licenses.
+
+The bundled [JetBrains Mono](https://github.com/JetBrains/JetBrainsMono) fonts use the [SIL Open Font License 1.1](resources/fonts/OFL.txt). See [font provenance](resources/fonts/README.md); the license is embedded and readable in Help.

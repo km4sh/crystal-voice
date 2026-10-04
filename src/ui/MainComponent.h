@@ -4,10 +4,11 @@
 #include "ui/LevelMeterComponent.h"
 #include "ui/PluginListView.h"
 #include "ui/DevicePanel.h"
+#include "ui/WorkspaceLayout.h"
 #include "state/AutostartRegistry.h"
 #include "net/UpdateChecker.h"
 
-class MainComponent : public juce::Component, private juce::Timer
+class MainComponent : public juce::Component, private juce::Timer, private juce::ComponentListener
 {
 public:
     explicit MainComponent (AudioEngine&);
@@ -15,11 +16,13 @@ public:
     void paint (juce::Graphics&) override;
     void resized() override;
     void visibilityChanged() override;
+    void parentHierarchyChanged() override;
     void setUpdateCheckEnabled (bool on, bool runIfOn);
     std::function<void (bool)> onUpdateCheckToggled;
     std::function<void (const juce::String&, const juce::String&)> onUpdateFound;
 private:
     void timerCallback() override;
+    void componentVisibilityChanged (juce::Component&) override;
     void refreshStatus();
     void showHowTo();
     void startUpdateCheck();
@@ -27,9 +30,9 @@ private:
     DevicePanel devicePanel;
     PluginListView pluginList;
     LevelMeterComponent inMeter, outMeter;
-    juce::Label inLabel { {}, "MIC INPUT" }, outLabel { {}, "PROCESSED OUTPUT" };
+    juce::Label inLabel { {}, "INPUT LEVEL" }, outLabel { {}, "OUTPUT LEVEL" };
     juce::Label inReading, outReading, status, performance;
-    juce::TextButton muteButton { "Mute mic" }, bypassButton { "Bypass effects" }, howToButton { "Help" };
+    juce::TextButton muteButton { "[ MUTE MIC ]" }, howToButton { "[ HELP ]" };
     juce::ToggleButton autostartToggle { "Start with Windows" }, updateToggle { "Check for updates" };
     juce::HyperlinkButton versionLink;
     juce::String currentVersion;
@@ -37,4 +40,6 @@ private:
     juce::TooltipWindow tooltip { nullptr, 450 };
     std::unique_ptr<juce::DocumentWindow> helpWindow;
     juce::Rectangle<int> inputMeterCard, outputMeterCard;
+    DbScaleComponent inScale, outScale;
+    juce::Component::SafePointer<juce::Component> observedWindow;
 };

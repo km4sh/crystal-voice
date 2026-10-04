@@ -53,6 +53,9 @@ juce_add_gui_app(CrystalVoice
 juce_add_binary_data(MicVSTData SOURCES
     resources/iconDarkMode.png
     resources/iconLightMode.png
+    resources/fonts/JetBrainsMono-Regular.ttf
+    resources/fonts/JetBrainsMono-Medium.ttf
+    resources/fonts/OFL.txt
 )
 
 target_sources(CrystalVoice PRIVATE
@@ -95,6 +98,7 @@ target_sources(MicVSTTests PRIVATE
     tests/StabilityTests.cpp
     tests/DeviceTests.cpp
     tests/UiTests.cpp
+    src/ui/DevicePanel.cpp
     src/ui/PluginPicker.cpp
     src/audio/PluginChain.cpp
     src/audio/AudioEngine.cpp
@@ -113,6 +117,7 @@ target_compile_definitions(MicVSTTests PRIVATE
 )
 target_link_libraries(MicVSTTests PRIVATE
     MicVSTCore
+    MicVSTData
     juce::juce_audio_devices
     juce::juce_audio_utils
     juce::juce_audio_processors

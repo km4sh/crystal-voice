@@ -8,11 +8,14 @@ project follows [Semantic Versioning](https://semver.org/).
 
 ### Added
 - Crystal Voice identity, icons and separate settings/startup/update source.
-- New source/destination cards, effect cards, searchable effect window and error states.
+- Console UI inspired by threshold-34, with embedded JetBrains Mono Regular/Medium, a dark title bar, square controls, segmented meters and a two-column routing/effects workspace.
+- Searchable effect window and inline error states.
 - Physical input channel selection, master mute/bypass and automatic mono fan-out.
 - Regression coverage for actual graph processing, routing, state recovery and picker interactions.
 
 ### Fixed
+- Meter/status updates stopping when the initially hidden main window becomes visible or returns from the tray.
+- Disconnected profiles losing their selected sample rate, and initial picker scrolling hiding the first selected effect.
 - Cable discovery changing the active audio route and silent failures when changing devices.
 - Runtime audio driver failures not reaching the interface, and Retry not reopening an existing device.
 - Queued errors from old streams overriding successful recovery, and restored devices retaining a reconnect warning.

@@ -179,7 +179,7 @@ public:
             bool ok = false;
             if (arguments.contains ("--profile") && index + 1 < arguments.size())
             {
-                auto* component = mainWindow->getContent(); component->setSize (900, 828);
+                auto* component = mainWindow->getContent(); component->setSize (1000, 700);
                 const auto image = component->createComponentSnapshot (component->getLocalBounds());
                 juce::File output (arguments[index + 1].unquoted()); output.getParentDirectory().createDirectory();
                 juce::FileOutputStream stream (output); juce::PNGImageFormat png;
@@ -294,7 +294,7 @@ private:
         MainWindow (juce::String name, AudioEngine& engine, const juce::String& windowState)
             : DocumentWindow (name, theme::background, DocumentWindow::allButtons)
         {
-            setUsingNativeTitleBar (true);
+            theme::window (*this);
             // resize-to-fit AUS: die Fenstergröße diktiert centreWithSize unten, nicht die
             // Content-Größe. Sonst zieht der MainComponent (setSize im Ctor) die Startgröße
             // über das Minimum hinaus.
@@ -302,13 +302,13 @@ private:
             setContentOwned (content, false);
             setResizable (true, false);
             // Keep routing controls readable; additional height extends the effect list.
-            setResizeLimits (800, 720, 1600, 1400);
+            setResizeLimits (WorkspaceLayout::minWidth + 8, WorkspaceLayout::minHeight + 38, 1800, 1400);
             // Letzte Größe/Position wiederherstellen (innerhalb der Resize-Limits), sonst zentriert
             // auf Startgröße. restoreWindowStateFromString respektiert die gesetzten Limits.
             if (windowState.isNotEmpty())
                 restoreWindowStateFromString (windowState);
             else
-                centreWithSize (900, 860);
+                centreWithSize (1008, 738);
         }
         std::function<void()> onHide;
         void closeButtonPressed() override { setVisible (false); if (onHide) onHide(); }

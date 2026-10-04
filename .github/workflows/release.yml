@@ -25,6 +25,7 @@ jobs:
           files: |
             build/CrystalVoice_artefacts/Release/CrystalVoice.exe
             LICENSE
+            resources/fonts/OFL.txt
           body: |
             **Crystal Voice ${{ github.ref_name }}** — portable Windows x64 build, statically linked.
             Requires a virtual audio cable and separately installed VST3 effects.

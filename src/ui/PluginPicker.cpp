@@ -5,7 +5,7 @@ PluginPickerComponent::PluginPickerComponent (juce::Array<juce::PluginDescriptio
     std::function<void (const juce::PluginDescription&)> chosen, std::function<void()> cancel)
     : all (std::move (choices)), onChosen (std::move (chosen)), onCancel (std::move (cancel))
 {
-    search.setTextToShowWhenEmpty ("Search effects or manufacturers...", theme::muted);
+    search.setTextToShowWhenEmpty ("> Search effects or manufacturers...", theme::muted);
     search.setFont (theme::font (15)); search.setIndents (12, 11);
     search.setComponentID ("plugin-search"); list.setComponentID ("plugin-results"); addButton.setComponentID ("plugin-add");
     search.onTextChange = [this] { rebuildItems(); }; search.addKeyListener (this);
@@ -19,7 +19,9 @@ PluginPickerComponent::PluginPickerComponent (juce::Array<juce::PluginDescriptio
     empty.setFont (theme::font (14)); empty.setJustificationType (juce::Justification::centred);
     empty.setColour (juce::Label::textColourId, theme::muted);
     for (auto* child : std::initializer_list<juce::Component*> { &search, &list, &addButton, &cancelButton, &results, &empty }) addAndMakeVisible (child);
-    rebuildItems(); setSize (600, 550);
+    // Select only after the viewport has a height; selecting in a zero-height
+    // list scrolls the first effect out of view when the window is later shown.
+    setSize (600, 550); rebuildItems();
 }
 
 void PluginPickerComponent::focusSearch() { search.grabKeyboardFocus(); }
@@ -30,10 +32,10 @@ void PluginPickerComponent::setChoices (juce::Array<juce::PluginDescription> cho
 }
 void PluginPickerComponent::paint (juce::Graphics& g)
 {
-    g.fillAll (theme::background); g.setColour (theme::text); g.setFont (theme::font (23, true));
-    g.drawText ("Find your next effect", 24, 16, getWidth() - 48, 32, juce::Justification::centredLeft);
+    g.fillAll (theme::background); g.setColour (theme::accent); g.setFont (theme::font (22, true));
+    g.drawText ("[ EFFECT LIBRARY ]", 24, 16, getWidth() - 48, 32, juce::Justification::centredLeft);
     g.setColour (theme::muted); g.setFont (theme::font (13));
-    g.drawText ("VST3 effects and built-in channel routing", 24, 51, getWidth() - 48, 20, juce::Justification::centredLeft);
+    g.drawText ("// VST3 + BUILT-IN ROUTING", 24, 51, getWidth() - 48, 20, juce::Justification::centredLeft);
     g.setColour (theme::border); g.drawHorizontalLine (getHeight() - 64, 24, (float) getWidth() - 24);
 }
 
@@ -88,8 +90,10 @@ void PluginPickerComponent::paintListBoxItem (int row, juce::Graphics& g, int wi
     const auto& item = items[(size_t) row];
     if (item.header)
     { g.setColour (theme::muted); g.setFont (theme::font (11, true));
-      g.drawText (item.text.toUpperCase(), 10, 12, width - 20, height - 12, juce::Justification::centredLeft); return; }
-    if (selected) { g.setColour (theme::raised); g.fillRoundedRectangle (2, 1, (float) width - 4, (float) height - 2, 8); }
+      g.drawText ("// " + item.text.toUpperCase(), 10, 12, width - 20, height - 12, juce::Justification::centredLeft); return; }
+    if (selected)
+    { g.setColour (theme::accent.withAlpha (0.08f)); g.fillRect (2, 1, width - 4, height - 2);
+      g.setColour (theme::accent); g.fillRect (2, 1, 2, height - 2); }
     const auto& description = filtered[item.pluginIndex];
     g.setColour (selected ? theme::accent : theme::text); g.setFont (theme::font (14, true));
     g.drawText (item.text, 14, 5, width - 108, 22, juce::Justification::centredLeft);

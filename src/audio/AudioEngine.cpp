@@ -145,7 +145,7 @@ juce::String AudioEngine::initialise (const juce::String& inputDeviceName,
     // auch wenn (noch) kein Device offen ist (z. B. Gerät noch nicht da / Reconnect).
     juce::String err = openDeviceSetup (setup, deviceManager.preferredTypeName());
     if (err.isNotEmpty()) deviceManager.closeAudioDevice();
-    else requestedSetup = deviceManager.getAudioDeviceSetup();
+    else requestedSetup = deviceManager.getCurrentAudioDevice() != nullptr ? deviceManager.getAudioDeviceSetup() : setup;
     ++deviceGeneration;
     deviceError = err;
     awaitingReconnect = false;
@@ -267,7 +267,7 @@ juce::String AudioEngine::setDeviceConfig (const juce::String& input, const juce
         if (onStatusChanged) onStatusChanged();
         return error;
     }
-    requestedSetup = deviceManager.getAudioDeviceSetup();
+    requestedSetup = deviceManager.getCurrentAudioDevice() != nullptr ? deviceManager.getAudioDeviceSetup() : setup;
     ++deviceGeneration;
     deviceError.clear();
     awaitingReconnect = false;

@@ -9,7 +9,7 @@ public:
     ~DevicePanel() override;
     void paint (juce::Graphics&) override;
     void resized() override;
-    int preferredHeight() const { return 214; }
+    int preferredHeight() const { return 462; }
 private:
     void changeListenerCallback (juce::ChangeBroadcaster*) override;
     void timerCallback() override;
@@ -19,9 +19,9 @@ private:
     AudioEngine& engine;
     juce::ComboBox inputBox, outputBox, channelBox, rateBox, bufferBox;
     juce::TextButton retryButton { "Retry" };
-    juce::Label inputHint, outputHint, rateLabel { {}, "Sample rate" }, bufferLabel { {}, "Buffer" }, statusLabel;
+    juce::Label inputHint, outputHint, rateLabel { {}, "SAMPLE RATE" }, bufferLabel { {}, "BUFFER" }, statusLabel;
     juce::Array<double> rates;
     juce::Array<int> buffers;
-    juce::Rectangle<int> inputCard, outputCard;
+    juce::Rectangle<int> inputCard, outputCard, engineCard;
     bool updating = false, refreshPending = false;
 };

@@ -20,8 +20,10 @@ namespace
                 "5. Closing the main window keeps audio running in the tray. Right-click the tray icon to quit.\n\n"
                 "RNNoise requires 48 kHz. Choose matching sample rates in your audio device settings. Reported latency is a host estimate; the cable and receiving application add their own delay.\n\n"
                 "Settings are saved automatically in %APPDATA%\\CrystalVoice. Missing effects stay in the chain with their saved settings. Rescan after reinstalling a plugin.\n\n"
-                "VB-CABLE: https://vb-audio.com/Cable/\nProject: https://github.com/km4sh/crystal-voice", false);
-            setUsingNativeTitleBar (true); setContentOwned (body, false);
+                "VB-CABLE: https://vb-audio.com/Cable/\nProject: https://github.com/km4sh/crystal-voice\n\n"
+                "FONT LICENSE // JETBRAINS MONO 2.304\n\n"
+                + juce::String::fromUTF8 (BinaryData::OFL_txt, BinaryData::OFL_txtSize), false);
+            theme::window (*this); setContentOwned (body, false);
             setResizable (true, false); setResizeLimits (480, 440, 1000, 1000);
             centreWithSize (580, 620);
         }
@@ -29,7 +31,7 @@ namespace
     };
     juce::String levelText (LevelReading level)
     {
-        if (level.peak < 0.00001f) return "Silence";
+        if (level.peak < 0.00001f) return "-inf dB";
         return juce::String (juce::Decibels::gainToDecibels (level.peak), 1) + " dB";
     }
 }
@@ -37,24 +39,24 @@ namespace
 MainComponent::MainComponent (AudioEngine& e) : engine (e), devicePanel (e), pluginList (e)
 {
     for (auto* component : std::initializer_list<juce::Component*> {
-        &devicePanel, &pluginList, &inMeter, &outMeter, &inLabel, &outLabel,
-        &inReading, &outReading, &status, &performance, &muteButton, &bypassButton,
+        &devicePanel, &pluginList, &inMeter, &outMeter, &inScale, &outScale, &inLabel, &outLabel,
+        &inReading, &outReading, &status, &performance, &muteButton,
         &howToButton, &autostartToggle, &updateToggle, &versionLink }) addAndMakeVisible (component);
     for (auto* label : { &inLabel, &outLabel })
     { label->setFont (theme::font (11, true)); label->setColour (juce::Label::textColourId, theme::muted); }
     for (auto* label : { &inReading, &outReading })
     { label->setFont (theme::font (13, true)); label->setJustificationType (juce::Justification::centredRight);
-      label->setText ("Silence", juce::dontSendNotification); }
+      label->setText ("-inf dB", juce::dontSendNotification); }
     status.setFont (theme::font (13, true));
-    status.setJustificationType (juce::Justification::centredRight);
+    status.setJustificationType (juce::Justification::centredLeft);
     performance.setFont (theme::font (12));
     performance.setColour (juce::Label::textColourId, theme::muted);
     muteButton.setClickingTogglesState (true);
-    muteButton.setColour (juce::TextButton::buttonOnColourId, theme::danger);
+    muteButton.setColour (juce::TextButton::buttonOnColourId, theme::danger.withAlpha (0.16f));
+    muteButton.setColour (juce::TextButton::textColourOnId, theme::danger);
     muteButton.onClick = [this] { engine.setMuted (muteButton.getToggleState()); refreshStatus(); };
-    bypassButton.setClickingTogglesState (true);
-    bypassButton.onClick = [this] { engine.setMasterBypass (bypassButton.getToggleState()); refreshStatus(); };
     howToButton.onClick = [this] { showHowTo(); };
+    howToButton.setColour (juce::TextButton::textColourOffId, theme::warning);
     autostartToggle.setToggleState (AutostartRegistry::isEnabled(), juce::dontSendNotification);
     autostartToggle.onClick = [this] { AutostartRegistry::setEnabled (autostartToggle.getToggleState()); };
     autostartToggle.setTooltip ("Start silently in the tray when you sign in to Windows");
@@ -68,72 +70,88 @@ MainComponent::MainComponent (AudioEngine& e) : engine (e), devicePanel (e), plu
     };
     currentVersion = juce::JUCEApplication::getInstance()->getApplicationVersion();
     versionLink.setButtonText ("v" + currentVersion);
+    versionLink.setFont (theme::font (12), false);
     versionLink.setURL (juce::URL ("https://github.com/km4sh/crystal-voice"));
     versionLink.setColour (juce::HyperlinkButton::textColourId, theme::muted);
     engine.onStatusChanged = [this] { refreshStatus(); };
-    refreshStatus(); setSize (900, 760); startTimerHz (24);
+    refreshStatus(); setSize (1000, 700); startTimerHz (24);
 }
 
-MainComponent::~MainComponent() { stopTimer(); engine.onStatusChanged = nullptr; }
+MainComponent::~MainComponent()
+{
+    stopTimer();
+    if (observedWindow != nullptr) observedWindow->removeComponentListener (this);
+    engine.onStatusChanged = nullptr;
+}
 
 void MainComponent::paint (juce::Graphics& g)
 {
     g.fillAll (theme::background);
-    auto mark = juce::Rectangle<float> (24, 23, 46, 46);
-    g.setColour (theme::accent); g.fillRoundedRectangle (mark, 13);
-    g.setColour (theme::background);
-    for (int i = 0; i < 5; ++i)
-    {
-        const float height = i == 2 ? 26.0f : (i % 2 ? 18.0f : 10.0f);
-        g.fillRoundedRectangle (33.0f + i * 6.0f, 46 - height / 2, 3.0f, height, 1.5f);
-    }
-    g.setColour (theme::text); g.setFont (theme::font (25, true));
-    g.drawText ("Crystal Voice", 84, 20, 250, 34, juce::Justification::centredLeft);
-    g.setColour (theme::muted); g.setFont (theme::font (13));
-    g.drawText ("Your microphone, refined.", 85, 54, 280, 20, juce::Justification::centredLeft);
-    theme::card (g, inputMeterCard.toFloat(), 12);
-    theme::card (g, outputMeterCard.toFloat(), 12);
-    g.setColour (theme::border); g.drawHorizontalLine (getHeight() - 58, 24.0f, (float) getWidth() - 24);
+    const WorkspaceLayout layout (getLocalBounds());
+    // Static, subdued technical grid. Only the two meters repaint at audio UI cadence.
+    g.setColour (theme::border.withAlpha (0.15f));
+    for (int x = 20; x < getWidth(); x += 32) g.drawVerticalLine (x, 0, (float) getHeight());
+    for (int y = 20; y < getHeight(); y += 32) g.drawHorizontalLine (y, 0, (float) getWidth());
+    auto title = layout.header;
+    theme::caption (g, "// REALTIME VOICE PROCESSOR", title.removeFromTop (18), theme::muted);
+    g.setColour (theme::accent); g.setFont (theme::font (30, true));
+    g.drawText ("CRYSTAL VOICE_", title.removeFromTop (38).withWidth (420), juce::Justification::centredLeft);
+    g.setColour (theme::muted); g.setFont (theme::font (12));
+    g.drawText ("MICROPHONE > EFFECTS > GAME / CHAT / STREAM", title.withWidth (440), juce::Justification::centredLeft);
+    g.setColour (theme::border); g.drawHorizontalLine (layout.header.getBottom() + 6, 20, (float) getWidth() - 20);
+    theme::card (g, inputMeterCard.toFloat()); theme::card (g, outputMeterCard.toFloat());
+    g.setColour (theme::border); g.drawHorizontalLine (layout.footer.getY() - 8, 20, (float) getWidth() - 20);
 }
 
 void MainComponent::resized()
 {
-    auto r = getLocalBounds().reduced (24);
-    auto header = r.removeFromTop (64);
-    muteButton.setBounds (header.removeFromRight (106).withHeight (36).translated (0, 13));
-    header.removeFromRight (10);
-    status.setBounds (header.removeFromRight (164).withHeight (36).translated (0, 13));
-    r.removeFromTop (20);
-    auto footer = r.removeFromBottom (34);
-    versionLink.setBounds (footer.removeFromRight (64));
-    footer.removeFromRight (10); howToButton.setBounds (footer.removeFromRight (60));
-    updateToggle.setBounds (footer.removeFromLeft (165));
-    autostartToggle.setBounds (footer.removeFromLeft (185));
-    performance.setBounds (footer.reduced (8, 0));
-    r.removeFromBottom (24);
-    devicePanel.setBounds (r.removeFromTop (devicePanel.preferredHeight()));
-    r.removeFromTop (12);
-    auto meters = r.removeFromTop (78);
-    inputMeterCard = meters.removeFromLeft ((meters.getWidth() - 12) / 2);
-    meters.removeFromLeft (12); outputMeterCard = meters;
+    const WorkspaceLayout layout (getLocalBounds());
+    auto header = layout.header;
+    muteButton.setBounds (header.removeFromRight (132).withHeight (34).translated (0, 22));
+    header.removeFromRight (16);
+    status.setBounds (header.removeFromRight (210).withHeight (34).translated (0, 22));
+    auto footer = layout.footer;
+    versionLink.setBounds (footer.removeFromRight (60));
+    footer.removeFromRight (10); howToButton.setBounds (footer.removeFromRight (88));
+    updateToggle.setBounds (footer.removeFromLeft (174));
+    autostartToggle.setBounds (footer.removeFromLeft (190));
+    performance.setBounds (footer.reduced (12, 0));
+    devicePanel.setBounds (layout.routing);
+    inputMeterCard = layout.inputMeter; outputMeterCard = layout.outputMeter;
     auto layoutMeter = [] (juce::Rectangle<int> bounds, juce::Label& label,
-                            juce::Label& reading, LevelMeterComponent& meter)
+                            juce::Label& reading, LevelMeterComponent& meter, DbScaleComponent& scale)
     {
-        auto content = bounds.reduced (16, 12);
-        auto title = content.removeFromTop (22);
-        reading.setBounds (title.removeFromRight (95)); label.setBounds (title);
-        content.removeFromTop (7); meter.setBounds (content.removeFromTop (17));
+        auto content = bounds.reduced (12, 10);
+        auto title = content.removeFromTop (20);
+        reading.setBounds (title.removeFromRight (86)); label.setBounds (title);
+        content.removeFromTop (6); meter.setBounds (content.removeFromTop (16));
+        content.removeFromTop (4); scale.setBounds (content.removeFromTop (16));
     };
-    layoutMeter (inputMeterCard, inLabel, inReading, inMeter);
-    layoutMeter (outputMeterCard, outLabel, outReading, outMeter);
-    r.removeFromTop (20); pluginList.setBounds (r);
-    bypassButton.setBounds (pluginList.getRight() - 386, pluginList.getY() + 4, 136, 34);
+    layoutMeter (inputMeterCard, inLabel, inReading, inMeter, inScale);
+    layoutMeter (outputMeterCard, outLabel, outReading, outMeter, outScale);
+    pluginList.setBounds (layout.effects);
 }
 
 void MainComponent::visibilityChanged()
 {
     if (isShowing()) { refreshStatus(); startTimerHz (24); }
     else stopTimer();
+}
+
+void MainComponent::parentHierarchyChanged()
+{
+    if (observedWindow != nullptr) observedWindow->removeComponentListener (this);
+    auto* window = getTopLevelComponent();
+    observedWindow = window != this ? window : nullptr;
+    if (observedWindow != nullptr) observedWindow->addComponentListener (this);
+    visibilityChanged();
+}
+
+void MainComponent::componentVisibilityChanged (juce::Component&)
+{
+    // JUCE does not call a child's visibilityChanged when only its window is shown.
+    // Follow the window too, including first launch and returning from the tray.
+    visibilityChanged();
 }
 
 void MainComponent::timerCallback()
@@ -156,15 +174,15 @@ void MainComponent::timerCallback()
 void MainComponent::refreshStatus()
 {
     muteButton.setToggleState (engine.isMuted(), juce::dontSendNotification);
-    muteButton.setButtonText (engine.isMuted() ? "Unmute" : "Mute mic");
-    bypassButton.setToggleState (engine.isMasterBypassed(), juce::dontSendNotification);
+    muteButton.setButtonText (engine.isMuted() ? "[ UNMUTE ]" : "[ MUTE MIC ]");
+    pluginList.refreshProcessingState();
     const bool routed = engine.isRunning() && engine.getRequestedSetup().inputDeviceName.isNotEmpty()
         && engine.getRequestedSetup().outputDeviceName.isNotEmpty();
-    status.setText (engine.isMuted() ? "MIC MUTED" : engine.getDeviceError().isNotEmpty() ? "NEEDS ATTENTION"
-        : ! routed ? "NOT ROUTED" : engine.isMasterBypassed() ? "DRY MIC" : "LIVE", juce::dontSendNotification);
+    status.setText (engine.isMuted() ? "[ MIC MUTED ]" : engine.getDeviceError().isNotEmpty() ? "[ DEVICE ERROR ]"
+        : ! routed ? "[ NOT CONNECTED ]" : engine.isMasterBypassed() ? "[ DRY MIC ]" : "[ SIGNAL LIVE ]", juce::dontSendNotification);
     status.setColour (juce::Label::textColourId, engine.isMuted() ? theme::danger
-        : routed && engine.getDeviceError().isEmpty() ? theme::accent : theme::warning);
-    performance.setText (juce::String (engine.getDeviceManager().getCpuUsage() * 100.0, 1) + "% audio CPU",
+        : routed && engine.getDeviceError().isEmpty() && ! engine.isMasterBypassed() ? theme::accent : theme::warning);
+    performance.setText ("AUDIO CPU " + juce::String (engine.getDeviceManager().getCpuUsage() * 100.0, 1) + "%",
                          juce::dontSendNotification);
 }
 

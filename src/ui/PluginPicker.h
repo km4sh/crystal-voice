@@ -32,6 +32,6 @@ private:
     std::function<void()> onCancel;
     juce::TextEditor search;
     juce::ListBox list { {}, this };
-    juce::TextButton addButton { "Add effect" }, cancelButton { "Cancel" };
+    juce::TextButton addButton { "[ ADD ]" }, cancelButton { "[ CANCEL ]" };
     juce::Label results, empty { {}, "No effects found. Try a different name or manufacturer." };
 };

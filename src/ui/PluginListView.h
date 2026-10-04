@@ -9,8 +9,9 @@ public:
     ~PluginListView() override;
     void paint (juce::Graphics&) override;
     void resized() override;
+    void refreshProcessingState();
 private:
-    static constexpr int rowH = 64, rowPitch = 72;
+    static constexpr int rowH = 68, rowPitch = 78;
     void timerCallback() override;
     void showPluginPicker();
     juce::Array<juce::PluginDescription> pickerChoices() const;
@@ -26,7 +27,7 @@ private:
     void toggleBypass (juce::uint32 id);
     void showRowMenu (juce::uint32 id, juce::Component* target);
     void updateScanUi();
-    struct Row : juce::Component
+    struct Row : juce::Component, juce::SettableTooltipClient
     {
         Row (PluginListView&, int index);
         void paint (juce::Graphics&) override;
@@ -39,7 +40,7 @@ private:
         juce::uint32 id;
         int index, grabOffsetY = 0;
         bool dragging = false;
-        juce::TextButton openButton { "Open" }, enabledButton { "On" }, moreButton { "..." };
+        juce::TextButton openButton { "[ EDIT ]" }, enabledButton { "ON" }, moreButton { "..." };
     };
     struct EditorWindow : juce::DocumentWindow
     {
@@ -49,7 +50,8 @@ private:
         std::function<void (EditorWindow*)> onClose;
     };
     AudioEngine& engine;
-    juce::TextButton addButton { "+ Add effect" }, foldersButton { "Library" }, skipScanButton { "Skip" };
+    juce::TextButton addButton { "[ + ADD ]" }, foldersButton { "[ LIBRARY ]" },
+        bypassButton { "[ BYPASS ]" }, skipScanButton { "Skip" };
     juce::Label scanLabel, noticeLabel;
     double scanProgress = 0.0;
     juce::ProgressBar scanBar { scanProgress };

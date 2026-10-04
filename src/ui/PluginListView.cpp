@@ -9,7 +9,7 @@ namespace
     public:
         PickerWindow (juce::Component* content) : DocumentWindow ("Add an effect", theme::background, closeButton)
         {
-            setUsingNativeTitleBar (true); setContentOwned (content, false);
+            theme::window (*this); setContentOwned (content, false);
             setResizable (true, false); setResizeLimits (500, 420, 1000, 1000);
             centreWithSize (600, 580);
         }
@@ -21,15 +21,17 @@ PluginListView::Row::Row (PluginListView& parent, int i)
     : owner (parent), id (parent.engine.getChain().entries()[(size_t) i].id), index (i)
 {
     const auto& effect = owner.engine.getChain().entries()[(size_t) i];
+    setName (effect.displayName);
+    setTooltip (effect.displayName + "\n" + (effect.isUnavailable() ? effect.error : effect.manufacturer));
     enabledButton.setClickingTogglesState (true);
     enabledButton.setToggleState (! effect.bypassed, juce::dontSendNotification);
-    enabledButton.setButtonText (effect.bypassed ? "Off" : "On");
+    enabledButton.setButtonText (effect.bypassed ? "OFF" : "ON");
     enabledButton.setEnabled (! effect.isUnavailable());
     enabledButton.setTooltip ("Enable or bypass this effect");
     enabledButton.onClick = [this] { owner.toggleBypass (id); };
     openButton.onClick = [this] { owner.openEditor (id); };
     openButton.setTooltip (effect.isUnavailable() ? effect.error : "Open the effect editor");
-    openButton.setButtonText (effect.isUnavailable() ? "Retry" : "Open");
+    openButton.setButtonText (effect.isUnavailable() ? "Retry" : "[ EDIT ]");
     moreButton.onClick = [this] { owner.showRowMenu (id, &moreButton); };
     moreButton.setTooltip ("Move or remove this effect");
     addAndMakeVisible (enabledButton); addAndMakeVisible (moreButton);
@@ -38,10 +40,10 @@ PluginListView::Row::Row (PluginListView& parent, int i)
 
 void PluginListView::Row::resized()
 {
-    auto r = getLocalBounds().reduced (14, 18);
-    moreButton.setBounds (r.removeFromRight (32)); r.removeFromRight (8);
-    enabledButton.setBounds (r.removeFromRight (48)); r.removeFromRight (8);
-    openButton.setBounds (r.removeFromRight (66));
+    auto r = getLocalBounds().reduced (12, 18);
+    moreButton.setBounds (r.removeFromRight (30)); r.removeFromRight (6);
+    enabledButton.setBounds (r.removeFromRight (40)); r.removeFromRight (6);
+    openButton.setBounds (r.removeFromRight (76));
 }
 
 void PluginListView::Row::paint (juce::Graphics& g)
@@ -50,30 +52,31 @@ void PluginListView::Row::paint (juce::Graphics& g)
     if (current < 0) return;
     const auto& effect = owner.engine.getChain().entries()[(size_t) current];
     auto bounds = getLocalBounds().toFloat().reduced (0.5f);
-    g.setColour (dragging ? theme::raised : theme::surface); g.fillRoundedRectangle (bounds, 12);
-    g.setColour (dragging ? theme::accent : theme::border); g.drawRoundedRectangle (bounds, 12, 1);
+    g.setColour (dragging ? theme::raised : theme::background); g.fillRect (bounds);
+    g.setColour (dragging || isMouseOver (true) ? theme::accent.withAlpha (0.6f) : theme::border); g.drawRect (bounds, 1);
+    const auto stateColour = effect.isUnavailable() ? theme::warning : effect.bypassed ? theme::muted : theme::accent;
+    g.setColour (stateColour); g.fillRect (0, 0, 2, getHeight());
     g.setColour (theme::muted.withAlpha (0.6f));
     for (int column = 0; column < 2; ++column)
-        for (int row = 0; row < 3; ++row) g.fillEllipse (13.0f + column * 5, 28.0f + row * 6, 2, 2);
-    g.setColour (theme::raised); g.fillRoundedRectangle (32, 18, 36, 36, 9);
-    g.setColour (effect.isUnavailable() ? theme::warning : effect.bypassed ? theme::muted : theme::accent);
+        for (int row = 0; row < 3; ++row) g.fillRect (11.0f + column * 5, 26.0f + row * 6, 2.0f, 2.0f);
+    g.setColour (stateColour);
     g.setFont (theme::font (13, true));
-    g.drawText (juce::String (current + 1).paddedLeft ('0', 2), 32, 18, 36, 36, juce::Justification::centred);
-    const int right = openButton.getX() - 14;
+    g.drawText (juce::String (current + 1).paddedLeft ('0', 2), 27, 16, 28, 36, juce::Justification::centred);
+    const int right = openButton.getX() - 10;
     g.setFont (theme::font (15, true));
     g.setColour (effect.bypassed ? theme::muted : theme::text);
-    g.drawText (effect.displayName, 82, 14, juce::jmax (1, right - 82), 24, juce::Justification::centredLeft);
+    g.drawText (effect.displayName, 64, 10, juce::jmax (1, right - 64), 24, juce::Justification::centredLeft);
     juce::String detail = effect.isUnavailable() ? "Unavailable - settings preserved" : effect.manufacturer;
     if (auto* node = owner.engine.getGraph().getNodeForId (effect.node))
     {
         auto* processor = node->getProcessor();
         auto* device = owner.engine.getDeviceManager().getCurrentAudioDevice();
         const double rate = device != nullptr ? device->getCurrentSampleRate() : 48000.0;
-        detail << "  /  " << processor->getMainBusNumInputChannels() << " in, " << processor->getMainBusNumOutputChannels()
-               << " out  /  " << juce::String (rate > 0 ? processor->getLatencySamples() * 1000.0 / rate : 0, 1) << " ms";
+        detail << " / " << processor->getMainBusNumInputChannels() << ">" << processor->getMainBusNumOutputChannels()
+               << " / " << juce::String (rate > 0 ? processor->getLatencySamples() * 1000.0 / rate : 0, 1) << " ms";
     }
-    g.setColour (effect.isUnavailable() ? theme::warning : theme::muted); g.setFont (theme::font (12));
-    g.drawText (detail, 82, 39, juce::jmax (1, right - 82), 20, juce::Justification::centredLeft);
+    g.setColour (effect.isUnavailable() ? theme::warning : theme::muted); g.setFont (theme::font (11));
+    g.drawText (detail, 64, 36, juce::jmax (1, right - 64), 20, juce::Justification::centredLeft);
 }
 
 void PluginListView::Row::mouseDown (const juce::MouseEvent& e)
@@ -102,12 +105,19 @@ PluginListView::PluginListView (AudioEngine& e) : engine (e)
     theme::primary (addButton);
     addButton.onClick = [this] { showPluginPicker(); };
     foldersButton.onClick = [this] { showFolderMenu(); };
+    foldersButton.setColour (juce::TextButton::textColourOffId, theme::cyan);
+    bypassButton.setClickingTogglesState (true);
+    bypassButton.setTooltip ("Compare with your dry microphone. Mute still applies.");
+    bypassButton.setColour (juce::TextButton::textColourOnId, theme::warning);
+    bypassButton.setColour (juce::TextButton::buttonOnColourId, theme::warning.withAlpha (0.12f));
+    bypassButton.onClick = [this] { engine.setMasterBypass (bypassButton.getToggleState()); refreshProcessingState(); };
+    refreshProcessingState();
     foldersButton.setTooltip ("Plugin folders, scanning and recovery");
     for (auto* component : std::initializer_list<juce::Component*> {
-        &addButton, &foldersButton, &viewport, &scanLabel, &scanBar, &skipScanButton, &noticeLabel }) addAndMakeVisible (component);
+        &addButton, &foldersButton, &bypassButton, &viewport, &scanLabel, &scanBar, &skipScanButton, &noticeLabel }) addAndMakeVisible (component);
     viewport.setViewedComponent (&rowsHolder, false); viewport.setScrollBarsShown (true, false);
     viewport.setScrollBarThickness (8);
-    scanLabel.setFont (theme::font (12)); noticeLabel.setFont (theme::font (12));
+    scanLabel.setFont (theme::font (11)); noticeLabel.setFont (theme::font (11));
     noticeLabel.setColour (juce::Label::textColourId, theme::warning);
     skipScanButton.onClick = [this] { engine.skipCurrentScanFile(); };
     engine.onScanProgress = [this] (int current, int total, juce::String name)
@@ -126,14 +136,20 @@ PluginListView::~PluginListView()
     pickerWindow.reset(); editors.clear();
 }
 void PluginListView::timerCallback() { if (isShowing()) for (auto* row : rows) row->repaint(); }
+void PluginListView::refreshProcessingState()
+{
+    bypassButton.setToggleState (engine.isMasterBypassed(), juce::dontSendNotification);
+    bypassButton.setButtonText (engine.isMasterBypassed() ? "[ DRY MIC ]" : "[ BYPASS ]");
+}
 
 void PluginListView::paint (juce::Graphics& g)
 {
-    g.setColour (theme::text); g.setFont (theme::font (18, true));
-    g.drawText ("Effect chain", 0, 0, 200, 30, juce::Justification::centredLeft);
+    theme::card (g, getLocalBounds().toFloat());
+    g.setColour (theme::text); g.setFont (theme::font (16, true));
+    g.drawText ("[ EFFECT CHAIN ]", 14, 8, 240, 26, juce::Justification::centredLeft);
     g.setColour (theme::muted); g.setFont (theme::font (12));
-    g.drawText (juce::String (rows.size()) + (rows.size() == 1 ? " effect" : " effects") + "  /  processed from top to bottom",
-                0, 30, 360, 20, juce::Justification::centredLeft);
+    g.drawText (juce::String (rows.size()).paddedLeft ('0', 2) + " STAGES // TOP TO BOTTOM",
+                14, 34, getWidth() - 28, 20, juce::Justification::centredLeft);
     if (rows.isEmpty())
     {
         auto empty = viewport.getBounds().reduced (1);
@@ -141,17 +157,20 @@ void PluginListView::paint (juce::Graphics& g)
         g.setColour (theme::accent); g.setFont (theme::font (32));
         g.drawText ("+", empty.removeFromTop (empty.getHeight() / 2), juce::Justification::centredBottom);
         g.setColour (theme::text); g.setFont (theme::font (16, true));
-        g.drawText ("Make your microphone sound like you", empty.removeFromTop (34), juce::Justification::centred);
+        g.drawText ("[ NO EFFECTS LOADED ]", empty.removeFromTop (34), juce::Justification::centred);
         g.setColour (theme::muted); g.setFont (theme::font (13));
-        g.drawText ("Add an EQ, compressor or noise suppressor to get started.", empty.removeFromTop (26), juce::Justification::centred);
+        g.drawFittedText ("Add EQ, compression or noise suppression.\nYour dry microphone passes through until then.",
+                         empty.removeFromTop (48), juce::Justification::centred, 2);
     }
 }
 
 void PluginListView::resized()
 {
-    auto r = getLocalBounds(); auto header = r.removeFromTop (58);
-    addButton.setBounds (header.removeFromRight (128).withHeight (34).translated (0, 4));
-    header.removeFromRight (10); foldersButton.setBounds (header.removeFromRight (100).withHeight (34).translated (0, 4));
+    auto r = getLocalBounds().reduced (14, 0); r.removeFromTop (58);
+    auto toolbar = r.removeFromTop (32);
+    addButton.setBounds (toolbar.removeFromLeft (114)); toolbar.removeFromLeft (8);
+    foldersButton.setBounds (toolbar.removeFromLeft (116));
+    bypassButton.setBounds (toolbar.removeFromRight (126)); r.removeFromTop (12);
     if (scanLabel.isVisible())
     {
         auto scan = r.removeFromTop (30);
@@ -159,7 +178,8 @@ void PluginListView::resized()
         scanBar.setBounds (scan.removeFromRight (110).reduced (0, 11)); scanLabel.setBounds (scan);
         r.removeFromTop (8);
     }
-    else if (noticeLabel.isVisible()) { noticeLabel.setBounds (r.removeFromTop (26)); r.removeFromTop (4); }
+    else if (noticeLabel.isVisible()) { noticeLabel.setBounds (r.removeFromTop (24)); r.removeFromTop (4); }
+    r.removeFromBottom (10);
     viewport.setBounds (r);
     const int height = rows.size() * rowPitch;
     const int width = viewport.getWidth() - (height > viewport.getHeight() ? viewport.getScrollBarThickness() + 6 : 0);
@@ -329,7 +349,7 @@ void PluginListView::openEditor (juce::uint32 id)
     juce::Component::SafePointer<PluginListView> safe (this);
     auto* window = new EditorWindow (effect.displayName, id, [safe] (EditorWindow* closed)
     { if (auto* self = safe.getComponent()) { self->engine.requestPersist(); self->editors.removeObject (closed); } });
-    window->setUsingNativeTitleBar (true); window->setContentOwned (content, true);
+    theme::window (*window); window->setContentOwned (content, true);
     window->centreWithSize (window->getWidth(), window->getHeight()); window->setVisible (true); window->toFront (true);
     editors.add (window);
 }

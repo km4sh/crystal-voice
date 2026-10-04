@@ -9,12 +9,16 @@ DevicePanel::DevicePanel (AudioEngine& e) : engine (e)
     retryButton.onClick = [this]
     { engine.retryAudioDevice(); refresh(); };
     for (auto* label : { &inputHint, &outputHint, &rateLabel, &bufferLabel, &statusLabel })
-    { label->setFont (theme::font (12)); label->setColour (juce::Label::textColourId, theme::muted); }
-    inputHint.setText ("Choose a physical microphone or audio interface", juce::dontSendNotification);
-    outputHint.setText ("In other apps, select CABLE Output as your mic", juce::dontSendNotification);
+    { label->setFont (theme::font (11)); label->setColour (juce::Label::textColourId, theme::muted); }
+    inputHint.setText ("Select the channel carrying your mic.", juce::dontSendNotification);
+    outputHint.setText ("Other apps: select CABLE Output\nas the microphone.", juce::dontSendNotification);
+    statusLabel.setJustificationType (juce::Justification::topLeft);
+    inputBox.setComponentID ("device-input"); outputBox.setComponentID ("device-output");
+    channelBox.setComponentID ("device-channel"); bufferBox.setComponentID ("device-buffer");
     inputBox.setTooltip ("Audio source. Channel selection below supports either input on an audio interface.");
     outputBox.setTooltip ("Send audio to CABLE Input; other applications capture CABLE Output.");
     rateBox.setTooltip ("The device may require its Windows mix rate. RNNoise requires 48 kHz.");
+    rateBox.setComponentID ("device-sample-rate");
     bufferBox.setTooltip ("Auto uses the device default. Smaller buffers lower latency and increase CPU pressure.");
     inputBox.onChange = [this]
     { if (! updating) applyRoute (inputBox.getSelectedId() == 1 ? juce::String() : inputBox.getText(), engine.getRequestedSetup().outputDeviceName); };
@@ -87,7 +91,8 @@ void DevicePanel::refresh()
     auto* device = engine.getDeviceManager().getCurrentAudioDevice();
     rates = device != nullptr ? device->getAvailableSampleRates() : juce::Array<double>();
     if (rates.isEmpty()) rates.add (requested.sampleRate > 0 ? requested.sampleRate : 48000.0);
-    const double rate = device != nullptr ? device->getCurrentSampleRate() : requested.sampleRate;
+    const double rate = device != nullptr ? device->getCurrentSampleRate()
+                                         : requested.sampleRate > 0 ? requested.sampleRate : 48000.0;
     if (! rates.contains (rate) && rate > 0) rates.add (rate);
     rateBox.clear (juce::dontSendNotification);
     for (int i = 0; i < rates.size(); ++i) rateBox.addItem (juce::String (rates[i] / 1000.0, 1) + " kHz", i + 1);
@@ -109,16 +114,17 @@ void DevicePanel::updateStatus()
     auto* device = engine.getDeviceManager().getCurrentAudioDevice();
     auto error = engine.getDeviceError();
     juce::String text;
-    if (error.isNotEmpty()) text = "Could not change audio device: " + error;
-    else if (device == nullptr) text = "Connect a microphone and select a destination to start.";
+    if (error.isNotEmpty()) text = "AUDIO DEVICE ERROR\n" + error;
+    else if (device == nullptr) text = "// WAITING FOR AUDIO\nConnect a microphone and\nselect a destination to start.";
     else
     {
         const double rate = device->getCurrentSampleRate();
         const int buffer = device->getCurrentBufferSizeSamples();
         const double latency = rate > 0 ? 1000.0 * (device->getInputLatencyInSamples()
             + device->getOutputLatencyInSamples() + buffer + engine.getGraph().getLatencySamples()) / rate : 0.0;
-        text = juce::String (rate / 1000.0, 1) + " kHz  /  " + juce::String (buffer) + " samples  /  "
-            + juce::String (latency, 1) + " ms estimated host latency";
+        text = "HOST LATENCY  " + juce::String (latency, 1) + " ms\n"
+            + juce::String (rate / 1000.0, 1) + " kHz / " + juce::String (buffer) + " samples\n"
+            + "Cable / app delay is additional.";
         for (const auto& effect : engine.getChain().entries())
             if (! effect.bypassed && effect.displayName.containsIgnoreCase ("rnnoise") && rate != 48000.0)
             { text = "RNNoise requires 48 kHz. Change the device sample rate."; error = text; break; }
@@ -132,32 +138,31 @@ void DevicePanel::updateStatus()
 
 void DevicePanel::paint (juce::Graphics& g)
 {
-    theme::card (g, inputCard.toFloat()); theme::card (g, outputCard.toFloat());
-    g.setColour (theme::accent); g.setFont (theme::font (10, true));
-    g.drawText ("01 / SOURCE", inputCard.getX() + 16, 12, 150, 15, juce::Justification::centredLeft);
-    g.drawText ("02 / DESTINATION", outputCard.getX() + 16, 12, 200, 15, juce::Justification::centredLeft);
-    g.setColour (theme::text); g.setFont (theme::font (17, true));
-    g.drawText ("Microphone", inputCard.getX() + 16, 31, 220, 24, juce::Justification::centredLeft);
-    g.drawText ("Virtual microphone", outputCard.getX() + 16, 31, 260, 24, juce::Justification::centredLeft);
+    theme::card (g, inputCard.toFloat()); theme::card (g, outputCard.toFloat()); theme::card (g, engineCard.toFloat());
+    theme::caption (g, "01 // MICROPHONE", inputCard.reduced (14, 0).withHeight (34));
+    theme::caption (g, "02 // DESTINATION", outputCard.reduced (14, 0).withHeight (34));
+    theme::caption (g, "// AUDIO ENGINE", engineCard.reduced (14, 0).withHeight (34), theme::cyan);
 }
 
 void DevicePanel::resized()
 {
-    auto r = getLocalBounds(); auto cards = r.removeFromTop (178);
-    inputCard = cards.removeFromLeft ((cards.getWidth() - 12) / 2);
-    cards.removeFromLeft (12); outputCard = cards;
-    auto input = inputCard.reduced (16, 0); input.removeFromTop (64);
-    inputBox.setBounds (input.removeFromTop (36)); input.removeFromTop (8);
-    channelBox.setBounds (input.removeFromTop (30)); input.removeFromTop (5);
+    auto r = getLocalBounds(); inputCard = r.removeFromTop (144); r.removeFromTop (12);
+    outputCard = r.removeFromTop (112); r.removeFromTop (12);
+    engineCard = r.removeFromTop (106);
+    auto input = inputCard.reduced (14, 0); input.removeFromTop (36);
+    inputBox.setBounds (input.removeFromTop (34)); input.removeFromTop (8);
+    channelBox.setBounds (input.removeFromTop (30)); input.removeFromTop (6);
     inputHint.setBounds (input.removeFromTop (20));
-    auto output = outputCard.reduced (16, 0); output.removeFromTop (64);
-    outputBox.setBounds (output.removeFromTop (36)); output.removeFromTop (7);
-    auto rateRow = output.removeFromTop (16), bufferRow = output.removeFromTop (30);
-    const int width = (rateRow.getWidth() - 10) / 2;
-    rateLabel.setBounds (rateRow.removeFromLeft (width)); rateRow.removeFromLeft (10); bufferLabel.setBounds (rateRow);
-    rateBox.setBounds (bufferRow.removeFromLeft (width)); bufferRow.removeFromLeft (10); bufferBox.setBounds (bufferRow);
-    outputHint.setBounds (output.removeFromTop (20));
-    r.removeFromTop (6); auto statusRow = r.removeFromTop (30);
-    if (retryButton.isVisible()) { retryButton.setBounds (statusRow.removeFromRight (64)); statusRow.removeFromRight (8); }
-    statusLabel.setBounds (statusRow);
+    auto output = outputCard.reduced (14, 0); output.removeFromTop (36);
+    outputBox.setBounds (output.removeFromTop (34)); output.removeFromTop (4);
+    outputHint.setBounds (output.removeFromTop (32));
+    auto audio = engineCard.reduced (14, 0); audio.removeFromTop (36);
+    auto rateRow = audio.removeFromTop (18); audio.removeFromTop (4);
+    auto bufferRow = audio.removeFromTop (32);
+    const int width = (rateRow.getWidth() - 12) / 2;
+    rateLabel.setBounds (rateRow.removeFromLeft (width)); rateRow.removeFromLeft (12); bufferLabel.setBounds (rateRow);
+    rateBox.setBounds (bufferRow.removeFromLeft (width)); bufferRow.removeFromLeft (12); bufferBox.setBounds (bufferRow);
+    r.removeFromTop (10);
+    if (retryButton.isVisible()) { retryButton.setBounds (r.removeFromRight (62).withHeight (30)); r.removeFromRight (8); }
+    statusLabel.setBounds (r.reduced (2, 0));
 }
