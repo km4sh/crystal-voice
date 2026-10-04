@@ -6,6 +6,7 @@ struct LevelReading
 {
     float rms = 0.0f, peak = 0.0f; // Unsmoothed block measurements.
     float vu = 0.0f, heldPeak = 0.0f; // Display envelope and independent sample-peak hold.
+    float heldVu = 0.0f; // Recent maximum of that same VU envelope, used by the marker.
 };
 
 // Reine Funktion: RMS/Peak über alle Kanäle eines Buffers. Testbar ohne Hardware.
@@ -24,7 +25,8 @@ public:
         return { rms_.load (std::memory_order_relaxed),
                  peak_.load (std::memory_order_relaxed),
                  vu_.load (std::memory_order_relaxed),
-                 heldPeak_.load (std::memory_order_relaxed) };
+                 heldPeak_.load (std::memory_order_relaxed),
+                 heldVu_.load (std::memory_order_relaxed) };
     }
 private:
     // Exact discrete-time solution of y'' + 2*zeta*omega*y' + omega^2*y = omega^2*abs(x).
@@ -32,10 +34,17 @@ private:
     double position = 0.0, velocity = 0.0;
     double positionCoefficient = 0.0, velocityToPosition = 0.0,
         positionToVelocity = 0.0, velocityCoefficient = 0.0;
-    double heldPeak = 0.0, peakRelease = 1.0;
-    int holdSamples = 24000, holdRemaining = 0;
+    struct PeakHold
+    {
+        void prepare (double sampleRate, double holdSeconds, double releaseDbPerSecond);
+        void reset();
+        void process (double value);
+        double level = 0.0, release = 1.0;
+        int holdSamples = 1, remaining = 0;
+    };
+    PeakHold samplePeakHold, vuPeakHold;
     bool prepared = false;
     std::atomic<float> rms_  { 0.0f };
     std::atomic<float> peak_ { 0.0f };
-    std::atomic<float> vu_ { 0.0f }, heldPeak_ { 0.0f };
+    std::atomic<float> vu_ { 0.0f }, heldPeak_ { 0.0f }, heldVu_ { 0.0f };
 };

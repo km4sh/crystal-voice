@@ -265,10 +265,10 @@ struct PeakLineRenderingRegression : juce::UnitTest
     void runTest() override
     {
         LevelMeterComponent meter; meter.setSize (240, 18);
-        beginTest ("0 dBFS and over-range peaks remain visible inside the right border");
+        beginTest ("full-scale and over-range VU maxima remain visible inside the right border");
         for (const float peak : { 1.0f, 1.2f })
         {
-            meter.setLevel ({ 0.0f, peak, 0.0f, peak });
+            meter.setLevel ({ 0.0f, peak, 0.0f, peak, peak });
             juce::Image image (juce::Image::ARGB, 240, 18, true, juce::SoftwareImageType());
             juce::Graphics graphics (image); meter.paint (graphics);
             bool redPeak = false;
@@ -276,8 +276,8 @@ struct PeakLineRenderingRegression : juce::UnitTest
             expect (redPeak, "Edge pixels: " + image.getPixelAt (237, 8).toString() + ", "
                             + image.getPixelAt (238, 8).toString() + ", " + image.getPixelAt (239, 8).toString());
         }
-        beginTest ("negative-dB sample peaks align with the existing scale and retain the normal line colour");
-        meter.setLevel ({ 0.0f, 0.5f, 0.0f, 0.5f });
+        beginTest ("negative-dB VU maxima align with the existing scale and retain the normal line colour");
+        meter.setLevel ({ 0.0f, 0.5f, 0.0f, 0.5f, 0.5f });
         juce::Image image (juce::Image::ARGB, 240, 18, true, juce::SoftwareImageType());
         juce::Graphics graphics (image); meter.paint (graphics);
         const int expectedX = (int) (meterScale::dbToNorm (juce::Decibels::gainToDecibels (0.5f)) * 240);
@@ -285,6 +285,23 @@ struct PeakLineRenderingRegression : juce::UnitTest
         for (int x = expectedX - 1; x <= expectedX + 1; ++x)
             yellowPeak = yellowPeak || image.getPixelAt (x, 8) == theme::warning;
         expect (yellowPeak);
+
+        beginTest ("a 17 dB waveform crest gap cannot move the VU marker away from the bar");
+        const float vu = juce::Decibels::decibelsToGain (-41.3f);
+        const float samplePeak = juce::Decibels::decibelsToGain (-24.3f);
+        meter.setLevel ({ vu, samplePeak, vu, samplePeak, vu });
+        juce::Image crestImage (juce::Image::ARGB, 240, 18, true, juce::SoftwareImageType());
+        juce::Graphics crestGraphics (crestImage); meter.paint (crestGraphics);
+        const int vuX = juce::roundToInt (meterScale::dbToNorm (-41.3f) * 240 - 1);
+        const int sampleX = (int) (meterScale::dbToNorm (-24.3f) * 240);
+        expect (crestImage.getPixelAt (vuX, 8) == theme::warning);
+        expect (crestImage.getPixelAt (sampleX, 8) != theme::warning);
+
+        beginTest ("a concurrent publication cannot put the recent-VU marker behind the live bar");
+        meter.setLevel ({ 0.0f, samplePeak, vu, samplePeak, 0.0f });
+        juce::Image concurrentImage (juce::Image::ARGB, 240, 18, true, juce::SoftwareImageType());
+        juce::Graphics concurrentGraphics (concurrentImage); meter.paint (concurrentGraphics);
+        expect (concurrentImage.getPixelAt (vuX, 8) == theme::warning);
     }
 };
 static PeakLineRenderingRegression peakLineRenderingRegression;

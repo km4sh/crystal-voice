@@ -16,8 +16,8 @@ project follows [Semantic Versioning](https://semver.org/).
 - Regression coverage for actual graph processing, routing, state recovery and picker interactions.
 
 ### Fixed
-- Twitchy input/output meters and peak-based numbers now follow a VU-style rectified average with 300 ms ballistics; the existing display and dBFS scale are retained, with a separate 500 ms peak hold.
-- Peak hold now releases smoothly at 20 dB/s instead of resetting to an arbitrary audio sample. Full-scale peaks remain inside the meter border, both inputs and outputs mark 0 dBFS, and numeric tooltips expose held sample peaks.
+- Twitchy input/output meters and peak-based numbers now follow a VU-style rectified average with 300 ms ballistics; the existing display and dBFS scale are retained.
+- The thin marker now holds the same VU envelope's maximum for 200 ms with a 60 dB/s return, avoiding a persistent crest-factor gap from overlaying sample peaks on the VU bar. Actual sample peaks remain independent for clipping and tooltips, with a 500 ms hold and 20 dB/s release. Full-scale markers remain inside the frame, and both inputs and outputs warn at 0 dBFS sample peaks.
 - Windows `VST3_PATH` parsing no longer splits drive letters at colons; duplicate folder spellings are normalised and relative roots are rejected.
 - Meter/status updates stopping when the initially hidden main window becomes visible or returns from the tray.
 - Disconnected profiles losing their selected sample rate, and initial picker scrolling hiding the first selected effect.

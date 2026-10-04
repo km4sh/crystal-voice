@@ -166,9 +166,11 @@ void MainComponent::timerCallback()
         outReading.setText (levelText (out), juce::dontSendNotification);
         const auto peakText = [] (LevelReading level)
         {
-            return "Sample peak: " + (level.heldPeak > 0.0f
-                ? juce::String (juce::Decibels::gainToDecibels (level.heldPeak), 1) : juce::String ("-inf"))
-                + " dBFS (500 ms hold, 20 dB/s release). The number shows VU average.";
+            const auto dbText = [] (float gain)
+            { return gain > 0.0f ? juce::String (juce::Decibels::gainToDecibels (gain), 1) : juce::String ("-inf"); };
+            return "VU maximum (line): " + dbText (juce::jmax (level.vu, level.heldVu))
+                + " dBFS. Sample peak (clip check): " + dbText (level.heldPeak)
+                + " dBFS. The number shows VU average.";
         };
         inReading.setTooltip (peakText (in)); outReading.setTooltip (peakText (out));
     }

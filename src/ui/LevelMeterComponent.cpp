@@ -27,8 +27,9 @@ void LevelMeterComponent::paint (juce::Graphics& g)
         g.fillRect (juce::Rectangle<float> (x + 1, b.getY() + 2, juce::jmax (1.0f, pitch - 2), b.getHeight() - 4));
     }
 
-    // Keep a full-scale peak inside the frame instead of clipping it at x == width.
-    const float peakDb = juce::Decibels::gainToDecibels (level.heldPeak, meterScale::minDb);
+    // Keep the VU maximum on the same scale as the bar. The max also protects against
+    // reading two adjacent audio callbacks while the atomics are being published.
+    const float peakDb = juce::Decibels::gainToDecibels (juce::jmax (level.vu, level.heldVu), meterScale::minDb);
     if (peakDb > meterScale::minDb)
     {
         g.setColour (level.heldPeak >= 1.0f ? theme::danger : theme::warning);
