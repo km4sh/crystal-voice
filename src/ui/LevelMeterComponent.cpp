@@ -15,20 +15,20 @@ void LevelMeterComponent::paint (juce::Graphics& g)
 
     auto dbX = [&] (float db) { return b.getX() + meterScale::dbToNorm (db) * b.getWidth(); };
 
-    const float rmsDb = juce::Decibels::gainToDecibels (level.rms, meterScale::minDb);
-    const float rmsX  = dbX (rmsDb);
+    const float vuDb = juce::Decibels::gainToDecibels (level.vu, meterScale::minDb);
+    const float vuX  = dbX (vuDb);
     constexpr int segments = 40;
     const float pitch = b.getWidth() / segments;
     for (int i = 0; i < segments; ++i)
     {
         const float x = b.getX() + i * pitch;
         const auto colour = i >= 38 ? theme::danger : i >= 34 ? theme::warning : theme::accent;
-        g.setColour (x < rmsX ? colour : theme::raised);
+        g.setColour (x < vuX ? colour : theme::raised);
         g.fillRect (juce::Rectangle<float> (x + 1, b.getY() + 2, juce::jmax (1.0f, pitch - 2), b.getHeight() - 4));
     }
 
     // Peak-Hold als vertikale gelbe Linie.
-    const float peakDb = juce::Decibels::gainToDecibels (level.peak, meterScale::minDb);
+    const float peakDb = juce::Decibels::gainToDecibels (level.heldPeak, meterScale::minDb);
     if (peakDb > meterScale::minDb)
     {
         g.setColour (theme::warning);

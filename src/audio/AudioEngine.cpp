@@ -545,6 +545,8 @@ void AudioEngine::audioDeviceAboutToStart (juce::AudioIODevice* device)
         + " | buf=" + juce::String (device->getCurrentBufferSizeSamples()));
     playHead.sampleRate.store (device->getCurrentSampleRate());
     playHead.samples.store (0);
+    inputMeter.prepare (device->getCurrentSampleRate());
+    outputMeter.prepare (device->getCurrentSampleRate());
     player.audioDeviceAboutToStart (device);
 }
 

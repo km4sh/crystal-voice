@@ -14,8 +14,8 @@ namespace meterScale
     }
 }
 
-// Horizontaler RMS-Balken (grün, von links) + Peak-Hold-Linie (gelb), mit
-// dezenten dB-Gitterlinien. setLevel() wird vom GUI-Timer aufgerufen.
+// The unchanged segmented display follows the audio-thread VU envelope.
+// The thin line independently holds sample peaks for 500 ms.
 class LevelMeterComponent : public juce::Component
 {
 public:

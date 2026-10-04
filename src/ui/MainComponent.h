@@ -42,4 +42,5 @@ private:
     juce::Rectangle<int> inputMeterCard, outputMeterCard;
     DbScaleComponent inScale, outScale;
     juce::Component::SafePointer<juce::Component> observedWindow;
+    int readoutTicks = 0;
 };

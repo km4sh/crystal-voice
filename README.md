@@ -21,6 +21,8 @@ The screenshot is rendered from the real application components with an isolated
 
 RNNoise needs **48 kHz**. The device panel exposes supported sample rates and buffer sizes, shows errors inline and offers Retry. Reported latency is an estimate of the host path; the cable, receiving application and network add their own delay.
 
+Both level bars and their numerical readings use VU-style average detection with about 300 ms to reach 99% of a steady level. The existing dBFS scale stays in place; the thin line separately holds sample peaks for 500 ms. This helps distinguish average voice level from brief peaks without changing the interface.
+
 ## What changed from MicVST
 
 - A console interface inspired by threshold-34: black surfaces, green/cyan accents, square panels, an integrated title bar and embedded JetBrains Mono Regular/Medium. Routing stays on the left; segmented input/output meters and effects stay on the right. The backdrop is static.

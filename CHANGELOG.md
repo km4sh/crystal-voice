@@ -14,6 +14,7 @@ project follows [Semantic Versioning](https://semver.org/).
 - Regression coverage for actual graph processing, routing, state recovery and picker interactions.
 
 ### Fixed
+- Twitchy input/output meters and peak-based numbers now follow a VU-style rectified average with 300 ms ballistics; the existing display and dBFS scale are retained, with a separate 500 ms peak hold.
 - Meter/status updates stopping when the initially hidden main window becomes visible or returns from the tray.
 - Disconnected profiles losing their selected sample rate, and initial picker scrolling hiding the first selected effect.
 - Cable discovery changing the active audio route and silent failures when changing devices.

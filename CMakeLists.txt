@@ -98,6 +98,7 @@ target_sources(MicVSTTests PRIVATE
     tests/StabilityTests.cpp
     tests/DeviceTests.cpp
     tests/UiTests.cpp
+    tests/VuMeterTests.cpp
     src/ui/DevicePanel.cpp
     src/ui/PluginPicker.cpp
     src/audio/PluginChain.cpp

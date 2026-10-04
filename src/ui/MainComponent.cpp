@@ -31,8 +31,8 @@ namespace
     };
     juce::String levelText (LevelReading level)
     {
-        if (level.peak < 0.00001f) return "-inf dB";
-        return juce::String (juce::Decibels::gainToDecibels (level.peak), 1) + " dB";
+        if (level.vu < 0.00001f) return "-inf dB";
+        return juce::String (juce::Decibels::gainToDecibels (level.vu), 1) + " dB";
     }
 }
 
@@ -134,7 +134,7 @@ void MainComponent::resized()
 
 void MainComponent::visibilityChanged()
 {
-    if (isShowing()) { refreshStatus(); startTimerHz (24); }
+    if (isShowing()) { readoutTicks = 0; refreshStatus(); startTimerHz (24); }
     else stopTimer();
 }
 
@@ -159,9 +159,13 @@ void MainComponent::timerCallback()
     if (! isShowing()) return;
     const auto in = engine.inputLevel(), out = engine.outputLevel();
     inMeter.setLevel (in); outMeter.setLevel (out);
-    inReading.setText (levelText (in), juce::dontSendNotification);
-    outReading.setText (levelText (out), juce::dontSendNotification);
-    outReading.setColour (juce::Label::textColourId, out.peak >= 0.999f ? theme::danger : theme::text);
+    // The bars retain 24 Hz motion; numbers use that same VU envelope at 6 Hz.
+    if (readoutTicks++ % 4 == 0)
+    {
+        inReading.setText (levelText (in), juce::dontSendNotification);
+        outReading.setText (levelText (out), juce::dontSendNotification);
+    }
+    outReading.setColour (juce::Label::textColourId, out.heldPeak >= 0.999f ? theme::danger : theme::text);
     // Registry access is limited to once per second, not every meter frame.
     static int ticks = 0;
     if (++ticks % 24 == 0)

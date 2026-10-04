@@ -4,7 +4,7 @@ Validated on 2026-10-04 with Windows 11 Pro x64 (build 26200), Visual Studio 202
 
 ## Automated checks
 
-Release application and test builds succeed. CTest reports **84 cases, 930 assertions passed, 0 failed**. Coverage includes:
+Release application and test builds succeed. CTest reports **91 cases, 968 assertions passed, 0 failed**. Coverage includes:
 
 - Actual audio graph processing, including mono fan-out, converter bypass, missing effects and stereo averaging.
 - Plugin scanning, timeouts, crash recovery, bundle/binary cache invalidation and forced retry.
@@ -16,10 +16,19 @@ Release application and test builds succeed. CTest reports **84 cases, 930 asser
 - Live picker updates retaining searches and exact VST3 class selection, including multiple classes in one bundle and repeated updates after a selected class disappears.
 - Disconnected sample-rate preferences remaining visible, the initial selected effect staying on screen, and non-overlapping routing/meter/effect/footer layouts at minimum and larger window sizes.
 - Both embedded JetBrains Mono weights loading with the expected family, cached typeface reuse and equal character advance widths.
+- VU sine calibration, 300 ms rise/fall and small overshoot at 44.1/48/96/192 kHz, suppression of short bursts, separate peak retention, callback-size/GUI-polling independence, channel polarity and reset behavior.
 
 Audio engine tests use injected in-memory device types, with WASAPI disabled in the test executable. No real audio device is enumerated or opened by these regression fixtures.
 
 The documentation image is rendered from the real application components with a disconnected development profile. It validates layout and component rendering; it does not replace interactive desktop testing.
+
+## VU display calculation
+
+The bars and numbers now follow a full-wave rectified channel average with an idealized second-order meter movement: approximately 300 ms to 99% of a steady level and 1.2% overshoot. The [ITU-R BS.645-2 metering description](https://www.itu.int/dms_pubrec/itu-r/rec/bs/R-REC-BS.645-2-199203-I!!PDF-E.pdf) provides the mean-level/300 ms VU reference. This is a software VU-style display on the existing digital dBFS scale, rather than a change to analog 0-VU calibration.
+
+Detection runs over every audio sample with coefficients prepared at the device's actual sample rate. The waveform itself is unchanged; block RMS and sample-peak measurements remain available independently. The existing thin peak line holds maxima for 500 ms. Bar motion remains 24 Hz and numerical VU readings update at 6 Hz.
+
+Rendering the same disconnected profile before and after this change produces an identical PNG SHA-256 (`c1f20b00232042ad468ccb01b0cd3f37939f01b2e064afdd0c3b59ca61324758`), confirming the static styling/layout is unchanged.
 
 ## Current interface smoke test
 
