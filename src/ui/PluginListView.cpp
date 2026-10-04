@@ -116,7 +116,7 @@ PluginListView::PluginListView (AudioEngine& e) : engine (e)
         scanLabel.setText ("Scanning " + juce::String (current) + "/" + juce::String (total) + " - " + name,
                            juce::dontSendNotification); updateScanUi();
     };
-    engine.onScanFinished = [this] { rebuildRows(); updateScanUi(); };
+    engine.onScanFinished = [this] { rebuildRows(); refreshPluginPicker(); updateScanUi(); };
     rebuildRows(); updateScanUi(); startTimer (1000);
 }
 
@@ -230,7 +230,7 @@ void PluginListView::showRowMenu (juce::uint32 id, juce::Component* target)
     });
 }
 
-void PluginListView::showPluginPicker()
+juce::Array<juce::PluginDescription> PluginListView::pickerChoices() const
 {
     juce::Array<juce::PluginDescription> choices;
     juce::PluginDescription mono, stereo;
@@ -238,8 +238,27 @@ void PluginListView::showPluginPicker()
     stereo.name = "Stereo to mono"; stereo.manufacturerName = "Built-in"; stereo.fileOrIdentifier = PluginChain::stereoToMonoId;
     choices.add (mono); choices.add (stereo);
     for (const auto& type : engine.getKnownPlugins().getTypes()) if (! type.isInstrument) choices.add (type);
+    return choices;
+}
+
+void PluginListView::refreshPluginPicker()
+{
+    if (pickerWindow != nullptr)
+        if (auto* picker = dynamic_cast<PluginPickerComponent*> (pickerWindow->getContentComponent()))
+            picker->setChoices (pickerChoices());
+}
+
+void PluginListView::showPluginPicker()
+{
+    if (pickerWindow != nullptr)
+    {
+        refreshPluginPicker();
+        pickerWindow->setVisible (true); pickerWindow->toFront (true);
+        if (auto* picker = dynamic_cast<PluginPickerComponent*> (pickerWindow->getContentComponent())) picker->focusSearch();
+        return;
+    }
     juce::Component::SafePointer<PluginListView> safe (this);
-    auto* picker = new PluginPickerComponent (choices,
+    auto* picker = new PluginPickerComponent (pickerChoices(),
         [safe] (const juce::PluginDescription& chosen)
         { if (auto* self = safe.getComponent()) { self->pickerWindow->setVisible (false); self->addFromPicker (chosen); } },
         [safe] { if (auto* self = safe.getComponent()) self->pickerWindow->setVisible (false); });
@@ -282,7 +301,7 @@ void PluginListView::showFolderMenu()
         else if (result == 4) { self->engine.retryMissingPlugins(); self->commitChange(); }
         else if (juce::isPositiveAndBelow (result - 1000, folders.size()))
         { self->engine.removePluginFolder (folders[result - 1000]); self->engine.requestPersist(); }
-        self->updateScanUi();
+        self->refreshPluginPicker(); self->updateScanUi();
     });
 }
 

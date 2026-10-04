@@ -16,7 +16,8 @@ namespace
     }
 }
 
-AudioEngine::AudioEngine()
+AudioEngine::AudioEngine (MicVSTDeviceManager::DeviceTypesFactory factory)
+    : deviceManager (std::move (factory))
 {
     // WICHTIG: erzwingt das Erstellen + Scannen der Geräte-Typen. Ohne diesen Aufruf
     // ist availableDeviceTypes leer, getCurrentDeviceTypeObject() liefert nullptr und
@@ -62,10 +63,17 @@ void AudioEngine::changeListenerCallback (juce::ChangeBroadcaster*)
                              requestedSetup.sampleRate, requestedSetup.bufferSize);
         }
         else if (wantsAudio && ! available)
+        {
+            awaitingReconnect = true;
             deviceError = "Waiting for the selected microphone or destination to reconnect.";
+        }
         const auto restored = deviceManager.getAudioDeviceSetup();
         if (isRunning() && restored.inputDeviceName == requestedSetup.inputDeviceName
-            && restored.outputDeviceName == requestedSetup.outputDeviceName) reconnectAttempted = false;
+            && restored.outputDeviceName == requestedSetup.outputDeviceName)
+        {
+            reconnectAttempted = false;
+            if (awaitingReconnect) { awaitingReconnect = false; deviceError.clear(); }
+        }
     }
     // Device kam/ging: AudioDeviceManager stellt das gespeicherte Setup selbst
     // wieder her (namensbasiert). Wir spiegeln nur den Status nach außen.
@@ -106,9 +114,10 @@ juce::String AudioEngine::detectCableOutput()
 juce::String AudioEngine::initialise (const juce::String& inputDeviceName,
                                       const juce::String& outputDeviceName, double sampleRate)
 {
+    const juce::ScopedValueSetter<bool> applying (applyingDevice, true);
+    ++deviceGeneration;
     deviceManager.removeAudioCallback (this);   // idempotent: doppelte Registrierung vermeiden
     deviceManager.closeAudioDevice();
-    deviceManager.setCurrentAudioDeviceType (deviceManager.preferredTypeName(), true);
 
     juce::AudioDeviceManager::AudioDeviceSetup setup;
     deviceManager.getAudioDeviceSetup (setup);
@@ -134,11 +143,12 @@ juce::String AudioEngine::initialise (const juce::String& inputDeviceName,
 
     // Fehler NICHT früh zurückgeben: Graph/Chain müssen immer existieren,
     // auch wenn (noch) kein Device offen ist (z. B. Gerät noch nicht da / Reconnect).
-    const juce::ScopedValueSetter<bool> applying (applyingDevice, true);
-    juce::String err = deviceManager.setAudioDeviceSetup (setup, true);
-    if (err.isEmpty()) err = validateActiveChannels (setup, deviceManager.getCurrentAudioDevice());
+    juce::String err = openDeviceSetup (setup, deviceManager.preferredTypeName());
     if (err.isNotEmpty()) deviceManager.closeAudioDevice();
+    else requestedSetup = deviceManager.getAudioDeviceSetup();
+    ++deviceGeneration;
     deviceError = err;
+    awaitingReconnect = false;
 
     if (auto* d = deviceManager.getCurrentAudioDevice())
         juce::Logger::writeToLog ("Setup: in=" + setup.inputDeviceName
@@ -195,20 +205,46 @@ void AudioEngine::audioDeviceError (const juce::String& error)
 {
     // The driver may report errors off the message thread. Queued notifications
     // must not access a destroyed engine, and never touch UI from the audio thread.
-    juce::MessageManager::callAsync ([this, guard = alive, error]
+    const auto generation = deviceGeneration.load();
+    juce::MessageManager::callAsync ([this, guard = alive, generation, error]
     {
-        if (! *guard) return;
+        if (! *guard || generation != deviceGeneration.load()) return;
+        awaitingReconnect = false;
         deviceError = error.isNotEmpty() ? error : "The audio device stopped unexpectedly.";
         juce::Logger::writeToLog ("Audio device error: " + deviceError);
         if (onStatusChanged) onStatusChanged();
     });
 }
 
+juce::String AudioEngine::openDeviceSetup (const juce::AudioDeviceManager::AudioDeviceSetup& setup,
+                                          const juce::String& typeName)
+{
+    auto error = deviceManager.openDeviceSetup (typeName, setup);
+    if (error.isEmpty()) return validateActiveChannels (setup, deviceManager.getCurrentAudioDevice());
+    if (typeName != MicVSTDeviceManager::lowLatencyTypeName) return error;
+
+    for (auto* type : deviceManager.getAvailableDeviceTypes())
+    {
+        if (type->getTypeName() != MicVSTDeviceManager::sharedTypeName) continue;
+        // Only change WASAPI mode; never substitute another microphone or output.
+        if ((setup.inputDeviceName.isNotEmpty() && ! type->getDeviceNames (true).contains (setup.inputDeviceName))
+            || (setup.outputDeviceName.isNotEmpty() && ! type->getDeviceNames (false).contains (setup.outputDeviceName)))
+            return error;
+        auto sharedError = deviceManager.openDeviceSetup (MicVSTDeviceManager::sharedTypeName, setup);
+        if (sharedError.isEmpty()) sharedError = validateActiveChannels (setup, deviceManager.getCurrentAudioDevice());
+        if (sharedError.isEmpty()) return {};
+        return "Low-latency mode: " + error + "\nShared mode: " + sharedError;
+    }
+    return error;
+}
+
 juce::String AudioEngine::setDeviceConfig (const juce::String& input, const juce::String& output,
                                   double sampleRate, int bufferSize)
 {
     const auto previous = deviceManager.getAudioDeviceSetup();
+    const auto previousType = deviceManager.getCurrentAudioDeviceType();
     const juce::ScopedValueSetter<bool> applying (applyingDevice, true);
+    ++deviceGeneration;
     auto setup = requestedSetup;
     setup.inputDeviceName  = input;
     setup.outputDeviceName = output;
@@ -216,17 +252,25 @@ juce::String AudioEngine::setDeviceConfig (const juce::String& input, const juce
     if (bufferSize > 0)   setup.bufferSize = bufferSize;
     // Kanäle EXPLIZIT (wie in initialise) — sonst droht 0 aktive Input-Kanäle.
     configureChannels (setup);
-    auto error = deviceManager.setAudioDeviceSetup (setup, true);
-    if (error.isEmpty()) error = validateActiveChannels (setup, deviceManager.getCurrentAudioDevice());
+    auto error = openDeviceSetup (setup, previousType.isNotEmpty() ? previousType : deviceManager.preferredTypeName());
     if (error.isNotEmpty())
     {
-        deviceManager.setAudioDeviceSetup (previous, true);
+        auto rollbackError = deviceManager.openDeviceSetup (previousType, previous);
+        if (rollbackError.isEmpty()) rollbackError = validateActiveChannels (previous, deviceManager.getCurrentAudioDevice());
+        if (rollbackError.isNotEmpty())
+        {
+            deviceManager.closeAudioDevice();
+            error += "\nPrevious route could not be restored: " + rollbackError;
+        }
+        ++deviceGeneration;
         deviceError = error;
         if (onStatusChanged) onStatusChanged();
         return error;
     }
     requestedSetup = deviceManager.getAudioDeviceSetup();
+    ++deviceGeneration;
     deviceError.clear();
+    awaitingReconnect = false;
     rebuildGraph();   // IO-Knoten-Kanalzahl kann sich geändert haben -> neu verdrahten
     if (onStatusChanged) onStatusChanged();
     if (onDeviceChanged) onDeviceChanged();
@@ -490,6 +534,8 @@ void AudioEngine::retryMissingPlugins()
 
 void AudioEngine::audioDeviceAboutToStart (juce::AudioIODevice* device)
 {
+    // A restarted stream must not inherit queued errors from its predecessor.
+    ++deviceGeneration;
     // Geöffnete Geräte-/Kanalkonfiguration ins Log (hilft beim Diagnostizieren von Audio-Problemen).
     juce::Logger::writeToLog ("Device start: '" + device->getName() + "'"
         + " | inCh aktiv=" + juce::String (device->getActiveInputChannels().countNumberOfSetBits())

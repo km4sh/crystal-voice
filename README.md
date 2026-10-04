@@ -25,8 +25,8 @@ RNNoise needs **48 kHz**. The device panel exposes supported sample rates and bu
 
 - Consistent dark interface, readable routing cards, input/output meters, effect cards, explicit editing controls and a searchable effect window.
 - Mono channel 1, mono channel 2 or stereo input selection. Mono audio fans out to stereo destinations automatically; auxiliary sidechain buses are excluded from the voice route.
-- Cable discovery no longer switches the current audio device. Failed changes preserve the previous requested route. Hot-unplug keeps the selected device names instead of saving a fallback. Runtime driver errors reach the UI safely, and Retry reopens the device.
-- Missing or failed effects stay in their original positions with preset data preserved. Already cached effects can be used while scanning continues.
+- Cable discovery no longer switches the current audio device. Failed changes preserve the previous requested route and WASAPI mode. Hot-unplug keeps the selected device names instead of saving a fallback. Runtime driver errors reach the UI safely; old errors are discarded after a restart. Low-latency open failures retry the same endpoints in shared mode.
+- Missing or failed effects stay in their original positions with preset data preserved. Already cached effects can be used while scanning continues. The effect picker updates with the library and retains its search and selected VST3 class.
 - VST3 class identifiers are saved, including multiple effects inside the same bundle. Bundle/binary cache aliases no longer cause a scan on every launch.
 - Row actions use stable effect identities and safe callbacks. A plugin has one editor window; closing it saves its parameters. Plugins without a custom editor can use the generic parameter editor.
 - Settings and the scan cache are written atomically. A valid previous settings file is kept as `config.xml.bak` and used if the main file is damaged.
@@ -45,7 +45,7 @@ ctest --test-dir build -C Release --output-on-failure
 
 Portable binary: `build/CrystalVoice_artefacts/Release/CrystalVoice.exe`. The static MSVC runtime avoids a Visual C++ Redistributable dependency.
 
-Regression tests cover audio graph connections, scanning and cache invalidation, missing-plugin restoration, failed route changes, settings recovery, VST3 identity, row reordering, picker search and keyboard selection. Windows CI runs the same Release build and tests; tag releases are published only after tests pass.
+Regression tests cover audio graph processing, scanning and cache invalidation, missing-plugin restoration, device restart/mode fallback and rollback, settings recovery, VST3 identity, row reordering and live picker interactions. Engine tests use in-memory devices with WASAPI disabled, so they do not open real audio endpoints. Windows CI runs the same Release build and tests; tag releases are published only after tests pass.
 
 See [validation results and remaining manual checks](docs/validation.md) for the local hardware smoke test and resource measurements.
 

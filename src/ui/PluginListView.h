@@ -13,6 +13,8 @@ private:
     static constexpr int rowH = 64, rowPitch = 72;
     void timerCallback() override;
     void showPluginPicker();
+    juce::Array<juce::PluginDescription> pickerChoices() const;
+    void refreshPluginPicker();
     void addFromPicker (const juce::PluginDescription&);
     void showFolderMenu();
     void chooseFolder();

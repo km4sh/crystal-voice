@@ -93,6 +93,7 @@ target_sources(MicVSTTests PRIVATE
     tests/ScanTests.cpp
     tests/PickerTests.cpp
     tests/StabilityTests.cpp
+    tests/DeviceTests.cpp
     tests/UiTests.cpp
     src/ui/PluginPicker.cpp
     src/audio/PluginChain.cpp
@@ -104,7 +105,7 @@ add_test(NAME CrystalVoiceRegression COMMAND $<TARGET_FILE:MicVSTTests>)
 target_compile_definitions(MicVSTTests PRIVATE
     JUCE_MODAL_LOOPS_PERMITTED=1
     JUCE_PLUGINHOST_VST3=1
-    JUCE_WASAPI=1
+    JUCE_WASAPI=0
     JUCE_DIRECTSOUND=0
     JUCE_ASIO=0
     JUCE_USE_CURL=0

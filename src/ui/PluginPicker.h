@@ -1,6 +1,7 @@
 #pragma once
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "ui/PluginSearch.h"
+#include <optional>
 
 class PluginPickerComponent : public juce::Component, private juce::ListBoxModel, private juce::KeyListener
 {
@@ -10,10 +11,11 @@ public:
     void paint (juce::Graphics&) override;
     void resized() override;
     void focusSearch();
+    void setChoices (juce::Array<juce::PluginDescription>);
     bool keyPressed (const juce::KeyPress& key) override { return keyPressed (key, this); }
 private:
     struct Item { bool header; juce::String text; int pluginIndex; };
-    void rebuildItems();
+    void rebuildItems (bool preserveSelection = false);
     void chooseRow (int);
     void moveSelection (int);
     int firstSelectableRow() const;
@@ -24,6 +26,7 @@ private:
     void selectedRowsChanged (int row) override;
     bool keyPressed (const juce::KeyPress&, juce::Component*) override;
     juce::Array<juce::PluginDescription> all, filtered;
+    std::optional<juce::PluginDescription> selectionToRestore;
     std::vector<Item> items;
     std::function<void (const juce::PluginDescription&)> onChosen;
     std::function<void()> onCancel;

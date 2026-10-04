@@ -15,6 +15,10 @@ project follows [Semantic Versioning](https://semver.org/).
 ### Fixed
 - Cable discovery changing the active audio route and silent failures when changing devices.
 - Runtime audio driver failures not reaching the interface, and Retry not reopening an existing device.
+- Queued errors from old streams overriding successful recovery, and restored devices retaining a reconnect warning.
+- Low-latency WASAPI open failures now fall back to shared mode using the same selected route; failed changes restore the previous mode.
+- An unchanged audio setup no longer prevents restarting a stopped device.
+- Open effect pickers refresh with the plugin library, retain search/class selection, and disable Add when the selected class disappears.
 - Virtual/loopback default microphones being selected on first launch.
 - Missing effects losing their order and saved presets; ambiguous VST3 bundle identities.
 - Stale asynchronous row actions and repeat editor windows.
@@ -25,6 +29,7 @@ project follows [Semantic Versioning](https://semver.org/).
 - Settings and scan cache use atomic replacement; valid previous configs have a recovery backup.
 - Startup imports an existing MicVST setup once, while retaining the original installation.
 - Windows build and release workflows target Crystal Voice and run CTest before publishing binaries.
+- Audio engine regressions use injectable in-memory devices; the test target disables WASAPI and never opens real audio endpoints.
 
 ## [1.1.1] - 2026-07-27
 

@@ -5,6 +5,7 @@
 #include "audio/ScanCoordinator.h"
 #include "audio/DeviceSelection.h"
 #include <thread>
+#include "FakeAudioDevices.h"
 
 struct StabilityTests : juce::UnitTest
 {
@@ -52,7 +53,7 @@ struct StabilityTests : juce::UnitTest
         file.deleteFile(); file.getSiblingFile (file.getFileName() + ".bak").deleteFile();
 
         beginTest ("missing plugins keep order and preset blobs instead of disappearing");
-        AudioEngine engine;
+        AudioEngine engine (testAudio::devices());
         state.inputDevice = "Disconnected microphone"; state.outputDevice = "Disconnected cable";
         PluginEntryState second = plugin; second.displayName = "Second effect";
         second.fileOrId = "C:/missing/Second.vst3"; second.identifier = "second-class";
@@ -181,7 +182,7 @@ struct DeviceErrorTests : juce::UnitTest
     void runTest() override
     {
         beginTest ("driver errors are delivered to the UI on the message thread");
-        AudioEngine engine;
+        AudioEngine engine (testAudio::devices());
         juce::StringArray errors;
         bool callbackOnMainThread = true;
         engine.onStatusChanged = [&]
@@ -199,7 +200,7 @@ struct DeviceErrorTests : juce::UnitTest
         beginTest ("queued driver errors are discarded after shutdown");
         bool calledAfterDestruction = false;
         {
-            auto exiting = std::make_unique<AudioEngine>();
+            auto exiting = std::make_unique<AudioEngine> (testAudio::devices());
             exiting->onStatusChanged = [&] { calledAfterDestruction = true; };
             exiting->audioDeviceError ("A late driver error");
         }

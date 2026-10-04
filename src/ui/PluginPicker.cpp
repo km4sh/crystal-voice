@@ -23,6 +23,11 @@ PluginPickerComponent::PluginPickerComponent (juce::Array<juce::PluginDescriptio
 }
 
 void PluginPickerComponent::focusSearch() { search.grabKeyboardFocus(); }
+void PluginPickerComponent::setChoices (juce::Array<juce::PluginDescription> choices)
+{
+    all = std::move (choices);
+    rebuildItems (true);
+}
 void PluginPickerComponent::paint (juce::Graphics& g)
 {
     g.fillAll (theme::background); g.setColour (theme::text); g.setFont (theme::font (23, true));
@@ -42,8 +47,16 @@ void PluginPickerComponent::resized()
     empty.setBounds (r.reduced (20));
 }
 
-void PluginPickerComponent::rebuildItems()
+void PluginPickerComponent::rebuildItems (bool preserveSelection)
 {
+    if (! preserveSelection) selectionToRestore.reset();
+    const int previousRow = list.getSelectedRow();
+    if (preserveSelection && juce::isPositiveAndBelow (previousRow, (int) items.size()))
+    {
+        const auto& item = items[(size_t) previousRow];
+        if (! item.header && juce::isPositiveAndBelow (item.pluginIndex, filtered.size()))
+            selectionToRestore = filtered[item.pluginIndex];
+    }
     filtered = filterPlugins (all, search.getText()); items.clear();
     const bool grouped = search.getText().trim().isEmpty(); juce::String manufacturer ("\x01");
     for (int i = 0; i < filtered.size(); ++i)
@@ -53,8 +66,15 @@ void PluginPickerComponent::rebuildItems()
         { manufacturer = description.manufacturerName; items.push_back ({ true, manufacturer.isEmpty() ? "Other" : manufacturer, -1 }); }
         items.push_back ({ false, description.name, i });
     }
-    list.updateContent(); list.selectRow (firstSelectableRow());
-    list.scrollToEnsureRowIsOnscreen (list.getSelectedRow()); list.repaint();
+    int selectedRow = selectionToRestore.has_value() ? -1 : firstSelectableRow();
+    if (selectionToRestore.has_value())
+        for (int row = 0; row < (int) items.size(); ++row)
+            if (! items[(size_t) row].header && selectionToRestore->isDuplicateOf (filtered[items[(size_t) row].pluginIndex]))
+            { selectedRow = row; break; }
+    list.deselectAllRows(); list.updateContent();
+    if (selectedRow >= 0)
+    { list.selectRow (selectedRow); list.scrollToEnsureRowIsOnscreen (selectedRow); }
+    list.repaint();
     selectedRowsChanged (list.getSelectedRow()); empty.setVisible (filtered.isEmpty());
     results.setText (juce::String (filtered.size()) + (filtered.size() == 1 ? " effect available" : " effects available"), juce::dontSendNotification);
 }

@@ -15,7 +15,7 @@ class AudioEngine : private juce::AudioIODeviceCallback,
                     private juce::ChangeListener
 {
 public:
-    AudioEngine();
+    explicit AudioEngine (MicVSTDeviceManager::DeviceTypesFactory = {});
     ~AudioEngine() override;
 
     juce::String initialise (const juce::String& inputDeviceName,
@@ -141,7 +141,9 @@ private:
     juce::String deviceError;
     bool applyingDevice = false;
     bool reconnectAttempted = false;
+    bool awaitingReconnect = false;
     std::shared_ptr<bool> alive = std::make_shared<bool> (true);
+    std::atomic<uint64_t> deviceGeneration { 0 };
     LevelMeter inputMeter, outputMeter;
 
     std::unique_ptr<ScanCoordinator> scanner;      // != nullptr solange ein Scan läuft
@@ -151,6 +153,7 @@ private:
     juce::StringArray listVst3Files() const;       // Standard- + Custom-Ordner enumerieren
     void restoreChain (const juce::Array<PluginEntryState>& plugins);
     void configureChannels (juce::AudioDeviceManager::AudioDeviceSetup&);
+    juce::String openDeviceSetup (const juce::AudioDeviceManager::AudioDeviceSetup&, const juce::String& typeName);
     void handleScanFinished (const ScanOutcome&);
     void pruneOutsideFolders();                    // Cache-Einträge entfernter Ordner löschen
 };
