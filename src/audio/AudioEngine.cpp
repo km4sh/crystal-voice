@@ -1,4 +1,5 @@
 #include "audio/AudioEngine.h"
+#include "audio/PluginLocations.h"
 using IOProc = juce::AudioProcessorGraph::AudioGraphIOProcessor;
 
 namespace
@@ -290,16 +291,27 @@ juce::File AudioEngine::pluginCacheFile()
 
 juce::StringArray AudioEngine::scanRoots() const
 {
-    // JUCE-Default-Orte statt hartkodiertem Pfad: deckt neben Program Files auch
-    // %LOCALAPPDATA%\Programs\Common\VST3 und die VST3_PATH-Umgebungsvariable ab.
-    MicVST3Format vst3;
-    juce::StringArray roots;
-    const auto defaults = vst3.getDefaultLocationsToSearch();
-    for (int i = 0; i < defaults.getNumPaths(); ++i)
-        roots.add (defaults[i].getFullPathName());
-    for (auto& f : pluginFolders)
-        if (f.isNotEmpty()) roots.add (f);
-    return roots;
+    auto roots = getDefaultPluginFolders();
+    roots.addArray (pluginFolders);
+    return pluginLocations::normaliseFolders (roots);
+}
+
+juce::StringArray AudioEngine::getDefaultPluginFolders() const
+{
+   #if JUCE_WINDOWS
+    const auto programFiles = juce::File::getSpecialLocation (juce::File::globalApplicationsDirectory);
+    return pluginLocations::windowsDefaults (programFiles.getFullPathName(),
+        juce::SystemStats::getEnvironmentVariable ("CommonProgramFiles", programFiles.getChildFile ("Common Files").getFullPathName()),
+        juce::File::getSpecialLocation (juce::File::windowsLocalAppData).getFullPathName(),
+        juce::File::getSpecialLocation (juce::File::currentExecutableFile).getParentDirectory().getFullPathName(),
+        juce::SystemStats::getEnvironmentVariable ("VST3_PATH", {}));
+   #else
+    MicVST3Format format;
+    juce::StringArray paths;
+    const auto defaults = format.getDefaultLocationsToSearch();
+    for (int i = 0; i < defaults.getNumPaths(); ++i) paths.add (defaults[i].getFullPathName());
+    return pluginLocations::normaliseFolders (paths);
+   #endif
 }
 
 juce::StringArray AudioEngine::listVst3Files() const

@@ -164,8 +164,16 @@ void MainComponent::timerCallback()
     {
         inReading.setText (levelText (in), juce::dontSendNotification);
         outReading.setText (levelText (out), juce::dontSendNotification);
+        const auto peakText = [] (LevelReading level)
+        {
+            return "Sample peak: " + (level.heldPeak > 0.0f
+                ? juce::String (juce::Decibels::gainToDecibels (level.heldPeak), 1) : juce::String ("-inf"))
+                + " dBFS (500 ms hold, 20 dB/s release). The number shows VU average.";
+        };
+        inReading.setTooltip (peakText (in)); outReading.setTooltip (peakText (out));
     }
-    outReading.setColour (juce::Label::textColourId, out.heldPeak >= 0.999f ? theme::danger : theme::text);
+    inReading.setColour (juce::Label::textColourId, in.heldPeak >= 1.0f ? theme::danger : theme::text);
+    outReading.setColour (juce::Label::textColourId, out.heldPeak >= 1.0f ? theme::danger : theme::text);
     // Registry access is limited to once per second, not every meter frame.
     static int ticks = 0;
     if (++ticks % 24 == 0)

@@ -162,8 +162,12 @@ int main (int, char**)
     int failures = 0, passes = 0;
     for (int i = 0; i < runner.getNumResults(); ++i)
     {
-        failures += runner.getResult (i)->failures;
-        passes += runner.getResult (i)->passes;
+        const auto* result = runner.getResult (i);
+        failures += result->failures;
+        passes += result->passes;
+        if (result->failures > 0)
+            std::cerr << result->unitTestName << ": " << result->subcategoryName << '\n'
+                      << result->messages.joinIntoString ("\n") << '\n';
     }
     std::cout << runner.getNumResults() << " cases, " << passes << " assertions passed, " << failures << " failed\n";
 

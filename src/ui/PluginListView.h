@@ -27,6 +27,7 @@ private:
     void toggleBypass (juce::uint32 id);
     void showRowMenu (juce::uint32 id, juce::Component* target);
     void updateScanUi();
+    void layoutRows (bool animate);
     struct Row : juce::Component, juce::SettableTooltipClient
     {
         Row (PluginListView&, int index);
@@ -36,12 +37,18 @@ private:
         void mouseDrag (const juce::MouseEvent&) override;
         void mouseUp (const juce::MouseEvent&) override;
         void mouseDoubleClick (const juce::MouseEvent&) override;
+        bool keyPressed (const juce::KeyPress&) override;
         PluginListView& owner;
         juce::uint32 id;
         int index, grabOffsetY = 0;
         bool dragging = false;
         juce::TextButton openButton { "[ EDIT ]" }, enabledButton { "ON" }, moreButton { "..." };
     };
+    void beginDrag (Row&, const juce::MouseEvent&);
+    void updateDrag (const juce::MouseEvent&);
+    void updateDragPosition();
+    void finishDrag();
+    void cancelDrag (bool animate);
     struct EditorWindow : juce::DocumentWindow
     {
         EditorWindow (const juce::String&, juce::uint32, std::function<void (EditorWindow*)>);
@@ -58,6 +65,8 @@ private:
     juce::Viewport viewport;
     juce::Component rowsHolder;
     juce::OwnedArray<Row> rows;
+    juce::ComponentAnimator rowAnimator;
+    int dragSource = -1, dragDestination = -1, dragPointerY = 0;
     juce::OwnedArray<EditorWindow> editors;
     std::unique_ptr<juce::DocumentWindow> pickerWindow;
 };

@@ -10,11 +10,15 @@ project follows [Semantic Versioning](https://semver.org/).
 - Crystal Voice identity, icons and separate settings/startup/update source.
 - Console UI inspired by threshold-34, with embedded JetBrains Mono Regular/Medium, a dark title bar, square controls, segmented meters and a two-column routing/effects workspace.
 - Searchable effect window and inline error states.
+- Animated drag previews, edge scrolling and Escape cancellation; audio order commits only when dropped.
+- Visible automatic scan folders, portable VST3 discovery and conventional Windows plugin directories.
 - Physical input channel selection, master mute/bypass and automatic mono fan-out.
 - Regression coverage for actual graph processing, routing, state recovery and picker interactions.
 
 ### Fixed
 - Twitchy input/output meters and peak-based numbers now follow a VU-style rectified average with 300 ms ballistics; the existing display and dBFS scale are retained, with a separate 500 ms peak hold.
+- Peak hold now releases smoothly at 20 dB/s instead of resetting to an arbitrary audio sample. Full-scale peaks remain inside the meter border, both inputs and outputs mark 0 dBFS, and numeric tooltips expose held sample peaks.
+- Windows `VST3_PATH` parsing no longer splits drive letters at colons; duplicate folder spellings are normalised and relative roots are rejected.
 - Meter/status updates stopping when the initially hidden main window becomes visible or returns from the tray.
 - Disconnected profiles losing their selected sample rate, and initial picker scrolling hiding the first selected effect.
 - Cable discovery changing the active audio route and silent failures when changing devices.

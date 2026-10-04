@@ -83,6 +83,7 @@ public:
     void removePluginFolder (const juce::String& folder);
     void setPluginFolders (const juce::StringArray& f) { pluginFolders = f; }
     const juce::StringArray& getPluginFolders() const  { return pluginFolders; }
+    juce::StringArray getDefaultPluginFolders() const;
 
     static juce::File pluginCacheFile();
 
@@ -149,7 +150,7 @@ private:
     std::unique_ptr<ScanCoordinator> scanner;      // != nullptr solange ein Scan läuft
     bool rescanQueued = false;   // merkt einen während des Scans angeforderten Folgescan vor
     juce::Array<SkippedPlugin> skippedPlugins;     // persistiert im Cache
-    juce::StringArray scanRoots() const;           // JUCE-Default-VST3-Orte + Custom-Ordner
+    juce::StringArray scanRoots() const;           // Automatic and custom VST3 folders.
     juce::StringArray listVst3Files() const;       // Standard- + Custom-Ordner enumerieren
     void restoreChain (const juce::Array<PluginEntryState>& plugins);
     void configureChannels (juce::AudioDeviceManager::AudioDeviceSetup&);

@@ -69,7 +69,7 @@ struct VuMeterTests : juce::UnitTest
             expect (meter.read().vu < 0.1f); expectEquals (meter.read().peak, 0.0f);
             expectEquals (meter.read().heldPeak, 1.0f);
             feedConstant (meter, 48000, 0.5, 0.0f);
-            expectEquals (meter.read().heldPeak, 0.0f);
+            expectWithinAbsoluteError (juce::Decibels::gainToDecibels (meter.read().heldPeak), -2.0f, 0.002f);
         }
 
         beginTest ("VU processing is independent of callback block size and GUI polling");
@@ -108,6 +108,51 @@ struct VuMeterTests : juce::UnitTest
             feedConstant (meter, 96000, 0.3, 0.5f);
             expectWithinAbsoluteError (meter.read().vu / (0.5f * calibration), 0.99f, 0.0005f);
             meter.reset(); expectEquals (meter.read().vu, 0.0f); expectEquals (meter.read().heldPeak, 0.0f);
+        }
+
+        beginTest ("sample peaks hold for 500 ms then release at 20 dB per second at every sample rate");
+        for (const double rate : { 44100.0, 48000.0, 96000.0, 192000.0 })
+        {
+            LevelMeter meter; meter.prepare (rate);
+            juce::AudioBuffer<float> impulse (1, 1); impulse.setSample (0, 0, -1.0f); meter.process (impulse);
+            feedConstant (meter, rate, 0.5, 0.0f); expectEquals (meter.read().heldPeak, 1.0f);
+            feedConstant (meter, rate, 0.1, 0.0f);
+            expectWithinAbsoluteError (juce::Decibels::gainToDecibels (meter.read().heldPeak), -2.0f, 0.0001f);
+            feedConstant (meter, rate, 0.9, 0.0f);
+            expectWithinAbsoluteError (juce::Decibels::gainToDecibels (meter.read().heldPeak), -20.0f, 0.0001f);
+        }
+
+        beginTest ("higher new transients retrigger peak hold without depending on GUI polling");
+        {
+            LevelMeter meter; meter.prepare (48000); feedConstant (meter, 48000, 0.01, 0.5f);
+            feedConstant (meter, 48000, 0.55, 0.0f);
+            juce::AudioBuffer<float> impulse (1, 1); impulse.setSample (0, 0, -0.8f); meter.process (impulse);
+            const auto peak = meter.read().heldPeak;
+            for (int i = 0; i < 100; ++i) (void) meter.read();
+            expectEquals (meter.read().heldPeak, peak);
+            feedConstant (meter, 48000, 0.5, 0.0f); expectEquals (meter.read().heldPeak, 0.8f);
+            feedConstant (meter, 48000, 0.2, 0.0f);
+            expectWithinAbsoluteError (meter.read().heldPeak, 0.8f * std::pow (10.0f, -4.0f / 20), 0.0001f);
+        }
+
+        beginTest ("lower ongoing tone peaks are never replaced by an arbitrary zero crossing");
+        {
+            LevelMeter meter; meter.prepare (48000); feedConstant (meter, 48000, 0.01, 1.0f);
+            feedTone (meter, 48000, 480);
+            expectWithinAbsoluteError (meter.read().heldPeak, std::pow (10.0f, -10.0f / 20), 0.0001f);
+            feedTone (meter, 48000, 64); expectWithinAbsoluteError (meter.read().heldPeak, 0.25f, 0.0001f);
+            LevelMeter other; other.prepare (48000); feedConstant (other, 48000, 0.01, 1.0f);
+            feedTone (other, 48000, 1024);
+            expectWithinAbsoluteError (other.read().heldPeak, std::pow (10.0f, -10.0f / 20), 0.0001f);
+        }
+
+        beginTest ("sample peak uses the loudest channel, preserves sign-independent transients and over-range headroom");
+        {
+            LevelMeter meter; meter.prepare (48000); juce::AudioBuffer<float> buffer (2, 480);
+            buffer.clear(); buffer.setSample (1, 201, -1.2f); meter.process (buffer);
+            expectEquals (meter.read().peak, 1.2f); expectEquals (meter.read().heldPeak, 1.2f);
+            expect (juce::Decibels::gainToDecibels (meter.read().heldPeak) > 0.0f);
+            expect (meter.read().vu < 0.01f);
         }
     }
 };

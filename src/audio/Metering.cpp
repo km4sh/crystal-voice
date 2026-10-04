@@ -36,6 +36,7 @@ void LevelMeter::prepare (double sampleRate)
     positionToVelocity = -angularFrequency * angularFrequency * velocityToPosition;
     velocityCoefficient = attenuation * (cosine - decay / frequency * sine);
     holdSamples = juce::jmax (1, (int) std::round (sampleRate * 0.5));
+    peakRelease = std::pow (10.0, -20.0 / (20.0 * sampleRate)); // 20 dB/s after the 500 ms hold.
     prepared = true;
     reset();
 }
@@ -78,7 +79,13 @@ void LevelMeter::process (const juce::AudioBuffer<float>& buffer)
         blockPeak = juce::jmax (blockPeak, samplePeak);
         if (samplePeak >= heldPeak) { heldPeak = samplePeak; holdRemaining = holdSamples; }
         else if (holdRemaining > 0) --holdRemaining;
-        else { heldPeak = samplePeak; holdRemaining = holdSamples; }
+        else
+        {
+            // Releasing to an arbitrary sample (often a zero crossing) loses recent peaks.
+            // Decay continuously in audio time, while always catching a higher new sample.
+            heldPeak = juce::jmax ((double) samplePeak, heldPeak * peakRelease);
+            if (heldPeak < 0.000001) heldPeak = 0.0;
+        }
     }
     // Match the existing dBFS scale for a steady sine: mean(abs(sine)) * pi/(2*sqrt(2)).
     // This is VU ballistics on a digital scale, not a new analog 0-VU reference level.
@@ -86,5 +93,5 @@ void LevelMeter::process (const juce::AudioBuffer<float>& buffer)
     rms_.store ((float) std::sqrt (sumSquares * channelScale / samples), std::memory_order_relaxed);
     peak_.store (blockPeak, std::memory_order_relaxed);
     vu_.store ((float) juce::jmax (0.0, position * sineCalibration), std::memory_order_relaxed);
-    heldPeak_.store (heldPeak, std::memory_order_relaxed);
+    heldPeak_.store ((float) heldPeak, std::memory_order_relaxed);
 }

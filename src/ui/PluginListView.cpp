@@ -22,6 +22,8 @@ PluginListView::Row::Row (PluginListView& parent, int i)
 {
     const auto& effect = owner.engine.getChain().entries()[(size_t) i];
     setName (effect.displayName);
+    setWantsKeyboardFocus (true);
+    setViewportIgnoreDragFlag (true);
     setTooltip (effect.displayName + "\n" + (effect.isUnavailable() ? effect.error : effect.manufacturer));
     enabledButton.setClickingTogglesState (true);
     enabledButton.setToggleState (! effect.bypassed, juce::dontSendNotification);
@@ -61,7 +63,7 @@ void PluginListView::Row::paint (juce::Graphics& g)
         for (int row = 0; row < 3; ++row) g.fillRect (11.0f + column * 5, 26.0f + row * 6, 2.0f, 2.0f);
     g.setColour (stateColour);
     g.setFont (theme::font (13, true));
-    g.drawText (juce::String (current + 1).paddedLeft ('0', 2), 27, 16, 28, 36, juce::Justification::centred);
+    g.drawText (juce::String (index + 1).paddedLeft ('0', 2), 27, 16, 28, 36, juce::Justification::centred);
     const int right = openButton.getX() - 10;
     g.setFont (theme::font (15, true));
     g.setColour (effect.bypassed ? theme::muted : theme::text);
@@ -81,19 +83,69 @@ void PluginListView::Row::paint (juce::Graphics& g)
 
 void PluginListView::Row::mouseDown (const juce::MouseEvent& e)
 {
-    if (e.x < 28) { dragging = true; grabOffsetY = e.y; toFront (false); repaint(); }
+    if (e.x < 28 && e.mods.isLeftButtonDown()) owner.beginDrag (*this, e);
 }
 void PluginListView::Row::mouseDrag (const juce::MouseEvent& e)
 {
-    if (dragging) setTopLeftPosition (0, juce::jlimit (0, juce::jmax (0, (owner.rows.size() - 1) * rowPitch),
-        e.getEventRelativeTo (getParentComponent()).y - grabOffsetY));
+    if (dragging) owner.updateDrag (e);
 }
 void PluginListView::Row::mouseUp (const juce::MouseEvent&)
 {
     if (! dragging) return;
-    dragging = false; owner.requestMove (id, (getY() + rowPitch / 2) / rowPitch);
+    owner.finishDrag();
 }
 void PluginListView::Row::mouseDoubleClick (const juce::MouseEvent& e) { if (e.x >= 28) owner.openEditor (id); }
+bool PluginListView::Row::keyPressed (const juce::KeyPress& key)
+{
+    if (dragging && key == juce::KeyPress::escapeKey) { owner.cancelDrag (true); return true; }
+    return false;
+}
+
+void PluginListView::beginDrag (Row& row, const juce::MouseEvent& event)
+{
+    if (rows.size() < 2) return;
+    cancelDrag (false);
+    dragSource = rows.indexOf (&row); dragDestination = dragSource;
+    rowAnimator.cancelAnimation (&row, false);
+    row.dragging = true; row.grabOffsetY = event.y;
+    dragPointerY = event.getEventRelativeTo (&viewport).y;
+    if (row.isShowing()) row.grabKeyboardFocus();
+    row.toFront (false); row.repaint(); startTimer (16);
+}
+
+void PluginListView::updateDrag (const juce::MouseEvent& event)
+{
+    dragPointerY = event.getEventRelativeTo (&viewport).y;
+    updateDragPosition();
+}
+
+void PluginListView::updateDragPosition()
+{
+    if (! juce::isPositiveAndBelow (dragSource, rows.size())) return;
+    auto* row = rows[dragSource];
+    const int y = juce::jlimit (0, (rows.size() - 1) * rowPitch,
+                               viewport.getViewPositionY() + dragPointerY - row->grabOffsetY);
+    row->setTopLeftPosition (0, y);
+    const int destination = (y + rowPitch / 2) / rowPitch;
+    if (destination != dragDestination) { dragDestination = destination; layoutRows (true); }
+}
+
+void PluginListView::finishDrag()
+{
+    const auto id = rows[dragSource]->id;
+    const int destination = dragDestination;
+    rows[dragSource]->dragging = false; rows[dragSource]->repaint();
+    dragSource = dragDestination = -1; startTimer (1000);
+    requestMove (id, destination);
+}
+
+void PluginListView::cancelDrag (bool animate)
+{
+    if (dragSource < 0) return;
+    for (auto* row : rows) { row->dragging = false; row->repaint(); }
+    dragSource = dragDestination = -1; startTimer (1000);
+    layoutRows (animate);
+}
 
 PluginListView::EditorWindow::EditorWindow (const juce::String& title, juce::uint32 id,
                                            std::function<void (EditorWindow*)> close)
@@ -116,6 +168,7 @@ PluginListView::PluginListView (AudioEngine& e) : engine (e)
     for (auto* component : std::initializer_list<juce::Component*> {
         &addButton, &foldersButton, &bypassButton, &viewport, &scanLabel, &scanBar, &skipScanButton, &noticeLabel }) addAndMakeVisible (component);
     viewport.setViewedComponent (&rowsHolder, false); viewport.setScrollBarsShown (true, false);
+    viewport.setComponentID ("effect-viewport"); rowsHolder.setComponentID ("effect-rows");
     viewport.setScrollBarThickness (8);
     scanLabel.setFont (theme::font (11)); noticeLabel.setFont (theme::font (11));
     noticeLabel.setColour (juce::Label::textColourId, theme::warning);
@@ -133,9 +186,18 @@ PluginListView::PluginListView (AudioEngine& e) : engine (e)
 PluginListView::~PluginListView()
 {
     stopTimer(); engine.onScanProgress = nullptr; engine.onScanFinished = nullptr;
+    rowAnimator.cancelAllAnimations (false);
     pickerWindow.reset(); editors.clear();
 }
-void PluginListView::timerCallback() { if (isShowing()) for (auto* row : rows) row->repaint(); }
+void PluginListView::timerCallback()
+{
+    if (dragSource >= 0)
+    {
+        if (! isShowing()) { cancelDrag (false); return; }
+        if (viewport.autoScroll (viewport.getWidth() / 2, dragPointerY, 28, 10)) updateDragPosition();
+    }
+    else if (isShowing()) for (auto* row : rows) row->repaint();
+}
 void PluginListView::refreshProcessingState()
 {
     bypassButton.setToggleState (engine.isMasterBypassed(), juce::dontSendNotification);
@@ -184,12 +246,34 @@ void PluginListView::resized()
     const int height = rows.size() * rowPitch;
     const int width = viewport.getWidth() - (height > viewport.getHeight() ? viewport.getScrollBarThickness() + 6 : 0);
     rowsHolder.setSize (juce::jmax (1, width), juce::jmax (viewport.getHeight(), height));
-    for (int i = 0; i < rows.size(); ++i) rows[i]->setBounds (0, i * rowPitch, width, rowH);
+    layoutRows (false);
+}
+
+void PluginListView::layoutRows (bool animate)
+{
+    for (int i = 0; i < rows.size(); ++i)
+    {
+        auto* row = rows[i];
+        int slot = i;
+        if (dragSource >= 0)
+        {
+            slot = i < dragSource ? i : i - 1;
+            if (slot >= dragDestination) ++slot;
+            if (i == dragSource) slot = dragDestination;
+        }
+        if (row->index != slot) { row->index = slot; row->repaint(); }
+        if (i == dragSource) { row->setSize (rowsHolder.getWidth(), rowH); continue; }
+        const juce::Rectangle<int> target (0, slot * rowPitch, rowsHolder.getWidth(), rowH);
+        if (! animate) { rowAnimator.cancelAnimation (row, false); row->setBounds (target); }
+        else if (rowAnimator.getComponentDestination (row) != target)
+            rowAnimator.animateComponent (row, target, 1.0f, 160, false, 1.0, 0.0);
+    }
 }
 
 void PluginListView::rebuildRows()
 {
-    const int y = viewport.getViewPositionY(); rows.clear();
+    const int y = viewport.getViewPositionY();
+    cancelDrag (false); rowAnimator.cancelAllAnimations (false); rows.clear();
     for (int i = 0; i < (int) engine.getChain().entries().size(); ++i)
     { auto* row = new Row (*this, i); rowsHolder.addAndMakeVisible (row); rows.add (row); }
     resized(); viewport.setViewPosition (0, y); repaint();
@@ -218,7 +302,19 @@ void PluginListView::requestMove (juce::uint32 id, int destination)
     juce::MessageManager::callAsync ([safe, id, destination]
     {
         if (auto* self = safe.getComponent())
-        { self->engine.getChain().movePlugin (self->engine.getChain().indexOf (id), destination); self->commitChange(); }
+        {
+            const int source = self->engine.getChain().indexOf (id);
+            if (source < 0) return;
+            const int target = juce::jlimit (0, (int) self->engine.getChain().entries().size() - 1, destination);
+            if (source != target)
+            {
+                self->engine.getChain().movePlugin (source, target);
+                self->engine.rebuildGraph(); self->engine.requestPersist();
+                for (int i = 0; i < self->rows.size(); ++i)
+                    if (self->rows[i]->id == id) { self->rows.move (i, target); break; }
+            }
+            self->layoutRows (true);
+        }
     });
 }
 void PluginListView::toggleBypass (juce::uint32 id)
@@ -304,10 +400,23 @@ void PluginListView::addFromPicker (const juce::PluginDescription& description)
 
 void PluginListView::showFolderMenu()
 {
-    juce::PopupMenu menu; menu.addItem (1, "Add VST3 folder..."); menu.addSeparator();
+    juce::PopupMenu menu;
+    menu.addSectionHeader ("VST3 EFFECT LIBRARY");
+    juce::PopupMenu automatic;
+    for (const auto& folder : engine.getDefaultPluginFolders())
+    {
+        const bool present = juce::File (folder).isDirectory();
+        automatic.addItem (-1, folder + (present ? "" : "  [not installed]"), false, present);
+    }
+    menu.addSubMenu ("Automatic scan folders", automatic);
+    menu.addItem (1, "Add VST3 folder...");
+    menu.addSectionHeader ("CUSTOM FOLDERS");
     const auto folders = engine.getPluginFolders();
     for (int i = 0; i < folders.size(); ++i)
     { juce::PopupMenu sub; sub.addItem (1000 + i, "Remove from library"); menu.addSubMenu (folders[i], sub); }
+    if (folders.isEmpty()) menu.addItem (-1, "No custom folders", false);
+    menu.addSeparator();
+    menu.addItem (-1, "Scans .vst3 effects; VST2 .dll is unsupported", false);
     menu.addItem (2, "Rescan all plugins", ! engine.isScanning());
     menu.addItem (3, "Retry skipped plugins", ! engine.isScanning() && ! engine.getSkippedPlugins().isEmpty());
     menu.addItem (4, "Retry missing effects");

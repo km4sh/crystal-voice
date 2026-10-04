@@ -27,13 +27,13 @@ void LevelMeterComponent::paint (juce::Graphics& g)
         g.fillRect (juce::Rectangle<float> (x + 1, b.getY() + 2, juce::jmax (1.0f, pitch - 2), b.getHeight() - 4));
     }
 
-    // Peak-Hold als vertikale gelbe Linie.
+    // Keep a full-scale peak inside the frame instead of clipping it at x == width.
     const float peakDb = juce::Decibels::gainToDecibels (level.heldPeak, meterScale::minDb);
     if (peakDb > meterScale::minDb)
     {
-        g.setColour (theme::warning);
-        const float px = dbX (peakDb);
-        g.drawLine (px, b.getY(), px, b.getBottom(), 2.0f);
+        g.setColour (level.heldPeak >= 1.0f ? theme::danger : theme::warning);
+        const int px = juce::roundToInt (juce::jlimit (b.getX() + 1, juce::jmax (b.getX() + 1, b.getRight() - 3), dbX (peakDb) - 1));
+        g.fillRect (px, 1, 2, juce::jmax (0, getHeight() - 2));
     }
 
     g.setColour (theme::border);

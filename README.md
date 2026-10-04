@@ -14,14 +14,16 @@ The screenshot is rendered from the real application components with an isolated
 
 1. Install a virtual audio cable, such as [VB-CABLE](https://vb-audio.com/Cable/).
 2. Run `CrystalVoice.exe`. Choose your physical **Microphone**, then choose **CABLE Input** as the destination. For an audio interface, select the correct physical input channel below the microphone.
-3. Click **[ + ADD ]**. Search VST3 effects by name or manufacturer; press Enter or click Add. Use **[ EDIT ]** to edit a plugin, **ON/OFF** to enable it, and the grip or row menu to reorder it.
+3. Click **[ + ADD ]**. Search VST3 effects by name or manufacturer; press Enter or click Add. Use **[ EDIT ]** to edit a plugin, **ON/OFF** to enable it, and the grip or row menu to reorder it. While dragging, other effects animate out of the way; hovering at the list edge scrolls it. Escape cancels a drag, and the audio chain changes only on drop.
 4. In the game, chat or streaming application, select **CABLE Output** as the microphone.
 
 **[ MUTE MIC ]** silences the outgoing signal. **[ BYPASS ]** sends the dry microphone for comparison. Closing the window keeps audio running in the tray; right-click the tray icon to quit. Enable **Start with Windows** after placing the executable in a permanent folder.
 
 RNNoise needs **48 kHz**. The device panel exposes supported sample rates and buffer sizes, shows errors inline and offers Retry. Reported latency is an estimate of the host path; the cable, receiving application and network add their own delay.
 
-Both level bars and their numerical readings use VU-style average detection with about 300 ms to reach 99% of a steady level. The existing dBFS scale stays in place; the thin line separately holds sample peaks for 500 ms. This helps distinguish average voice level from brief peaks without changing the interface.
+Both level bars and their numerical readings use VU-style average detection with about 300 ms to reach 99% of a steady level. The existing dBFS scale stays in place; the thin line separately holds sample peaks for 500 ms, then falls at 20 dB/s. Hover over a number to see the peak dBFS. Peaks at or above 0 dBFS turn red and remain visible inside the right border. These are sample peaks, without oversampled true-peak detection.
+
+**[ LIBRARY ] → Automatic scan folders** lists the folders scanned automatically and marks those that are installed. These include the [standard VST3 locations](https://steinbergmedia.github.io/vst3_dev_portal/pages/Technical%2BDocumentation/Locations%2BFormat/Plugin%2BLocations.html), the portable executable's `VST3` subfolder, semicolon-separated `VST3_PATH` entries, and common `VSTPlugins`, `Steinberg/VstPlugins`, `Common Files/VST2` and `Common Files/Steinberg/VST2` directories described by [Steinberg](https://helpcenter.steinberg.de/hc/en-us/articles/115000177084-VST-plug-in-locations-on-Windows). Only `.vst3` effects are discovered in those directories; VST2 `.dll` plugins are not supported. Use **Add VST3 folder** for other locations.
 
 ## What changed from MicVST
 

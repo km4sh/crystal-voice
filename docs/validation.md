@@ -4,7 +4,7 @@ Validated on 2026-10-04 with Windows 11 Pro x64 (build 26200), Visual Studio 202
 
 ## Automated checks
 
-Release application and test builds succeed. CTest reports **91 cases, 968 assertions passed, 0 failed**. Coverage includes:
+Release application and test builds succeed. CTest reports **108 cases, 1046 assertions passed, 0 failed**. Coverage includes:
 
 - Actual audio graph processing, including mono fan-out, converter bypass, missing effects and stereo averaging.
 - Plugin scanning, timeouts, crash recovery, bundle/binary cache invalidation and forced retry.
@@ -17,6 +17,9 @@ Release application and test builds succeed. CTest reports **91 cases, 968 asser
 - Disconnected sample-rate preferences remaining visible, the initial selected effect staying on screen, and non-overlapping routing/meter/effect/footer layouts at minimum and larger window sizes.
 - Both embedded JetBrains Mono weights loading with the expected family, cached typeface reuse and equal character advance widths.
 - VU sine calibration, 300 ms rise/fall and small overshoot at 44.1/48/96/192 kHz, suppression of short bursts, separate peak retention, callback-size/GUI-polling independence, channel polarity and reset behavior.
+- Actual drag animation intermediate positions, reversal/cancellation, stable controls after drop, one persistence callback per change, no persistence for unchanged drops, scrolled coordinates, edge scrolling and safe refresh during a drag.
+- Sample peaks holding for 500 ms and releasing at 20 dB/s across sample rates, newly retriggered peaks, lower ongoing tones, negative transients on the loudest channel, over-range samples and visible full-scale peak rendering.
+- Windows environment paths retaining drive letters, spaces, quoted semicolons and UNC roots; case/trailing-separator/dot-component deduplication; invalid relative-path rejection; conventional/user/portable locations and nested VST3 discovery excluding DLLs.
 
 Audio engine tests use injected in-memory device types, with WASAPI disabled in the test executable. No real audio device is enumerated or opened by these regression fixtures.
 
@@ -26,7 +29,7 @@ The documentation image is rendered from the real application components with a 
 
 The bars and numbers now follow a full-wave rectified channel average with an idealized second-order meter movement: approximately 300 ms to 99% of a steady level and 1.2% overshoot. The [ITU-R BS.645-2 metering description](https://www.itu.int/dms_pubrec/itu-r/rec/bs/R-REC-BS.645-2-199203-I!!PDF-E.pdf) provides the mean-level/300 ms VU reference. This is a software VU-style display on the existing digital dBFS scale, rather than a change to analog 0-VU calibration.
 
-Detection runs over every audio sample with coefficients prepared at the device's actual sample rate. The waveform itself is unchanged; block RMS and sample-peak measurements remain available independently. The existing thin peak line holds maxima for 500 ms. Bar motion remains 24 Hz and numerical VU readings update at 6 Hz.
+Detection runs over every audio sample with coefficients prepared at the device's actual sample rate. The waveform itself is unchanged; block RMS and sample-peak measurements remain available independently. The existing thin peak line holds maxima for 500 ms, then releases at 20 dB/s instead of dropping to an arbitrary sample at hold expiry. The peak detector uses the loudest channel without averaging, and does not oversample for true peaks. Full-scale peaks are drawn inside the frame in red, including on the input meter. Numerical tooltips expose the held sample peak. Bar motion remains 24 Hz and numerical VU readings update at 6 Hz.
 
 Rendering the same disconnected profile before and after this change produces an identical PNG SHA-256 (`c1f20b00232042ad468ccb01b0cd3f37939f01b2e064afdd0c3b59ca61324758`), confirming the static styling/layout is unchanged.
 
@@ -41,6 +44,8 @@ Verified on Windows 11 at the current display scale:
 - The effect picker opens with the first selected built-in effect visible and focused search, and uses the same console typography and palette.
 - Escape closes the picker. The TDR Nova native editor opens, draws correctly beneath the console title bar and closes back to the host.
 - Showing the initially hidden window restarts meter/status updates. With MiniFuse 2 channel 1 and VB-CABLE at 48 kHz / 480 samples, input levels update; dry bypass makes input/output readings match and the header reports DRY MIC. This is a live UI/route check, not a sustained-speech quality measurement.
+- TDR Nova was dragged between the second and third slots, with animated settling and stable live routing; the current RNNoise → mono-to-stereo → TDR Nova order was restored afterwards.
+- Library's automatic-path submenu opens and lists all eight conventional/user/portable candidates with installed/not-installed status. Native x64 Program Files/Common Files paths and the custom voice-plugin folder are preserved; VST2 support is explicitly distinguished from searching mixed folders for VST3 files.
 
 No installed host, original MicVST configuration, system audio defaults or startup entry was changed. The existing cached Gullfoss Live scan failure remains visible as a retryable library notice.
 

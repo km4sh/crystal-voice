@@ -32,7 +32,7 @@ private:
     double position = 0.0, velocity = 0.0;
     double positionCoefficient = 0.0, velocityToPosition = 0.0,
         positionToVelocity = 0.0, velocityCoefficient = 0.0;
-    float heldPeak = 0.0f;
+    double heldPeak = 0.0, peakRelease = 1.0;
     int holdSamples = 24000, holdRemaining = 0;
     bool prepared = false;
     std::atomic<float> rms_  { 0.0f };

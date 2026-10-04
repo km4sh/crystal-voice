@@ -25,6 +25,7 @@ FetchContent_MakeAvailable(JUCE)
 # --- Shared logic library (engine, state, audio helpers) ---
 add_library(MicVSTCore STATIC
     src/audio/Metering.cpp
+    src/audio/PluginLocations.cpp
     src/audio/GraphConnections.cpp
     src/audio/ScanCoordinator.cpp
     src/state/Persistence.cpp
@@ -99,6 +100,9 @@ target_sources(MicVSTTests PRIVATE
     tests/DeviceTests.cpp
     tests/UiTests.cpp
     tests/VuMeterTests.cpp
+    tests/PluginLocationsTests.cpp
+    src/ui/PluginListView.cpp
+    src/ui/LevelMeterComponent.cpp
     src/ui/DevicePanel.cpp
     src/ui/PluginPicker.cpp
     src/audio/PluginChain.cpp
