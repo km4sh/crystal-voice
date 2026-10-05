@@ -4,7 +4,7 @@ A small Windows VST3 host for a better microphone in games, calls and streams.
 
 **Microphone → effects → virtual audio cable → your application**
 
-Crystal Voice is an independent project based on [MicVST](https://github.com/philipz794/MicVST). It keeps the native C++/JUCE audio engine and portable executable, with a redesigned interface, chain presets, safe startup and fixes to routing, plugin restoration and settings persistence.
+Crystal Voice is an independent project based on [MicVST](https://github.com/philipz794/MicVST). It keeps the native C++/JUCE audio engine and portable executable, with a redesigned interface, per-instance plugin process isolation, chain presets, safe startup and fixes to routing and settings persistence.
 
 ![Crystal Voice interface](assets/screenshot.png)
 
@@ -36,11 +36,19 @@ Open **[ PRESETS ]**:
 
 Presets live in `%APPDATA%\CrystalVoice\Presets`. Startup presets choose the chain; **Start with Windows** separately controls whether the application launches at login. A `*` beside the current preset name indicates edits not yet saved to that named preset.
 
-Session disk writes run in the background and merge pending changes. Parameter notifications are collected until about one second of inactivity; Save, Export, editor close, window hide and Quit also capture the latest parameters. Reading a plugin's state briefly pauses effect processing with a 5 ms fade to silence and back while audio callbacks continue. Snapshot duration depends on the plugin, so save during a pause in speech when continuity matters. State functions still run inside the host and can stall or crash it.
+Session disk writes run in the background and merge pending changes. Parameter notifications and editor close are collected until about one second of inactivity; Save, Export, window hide and Quit also capture the latest parameters. Reading a plugin's state pauses that worker's DSP with a 5 ms fade to silence and back; other workers and audio callbacks continue. This can briefly interrupt wet audio in a serial chain, so save during a pause in speech when continuity matters. If a worker fails, saving retains its last successfully captured parameters.
+
+### Each plugin has its own process
+
+Every VST3 **instance** has a separate worker, including duplicate instances of the same plugin. Loading, DSP, state functions and its native or generic editor all run there. This follows the per-instance approach of Bitwig's [Individually hosting mode](https://www.bitwig.com/userguide/latest/vst_plug-in_handling_and_options/).
+
+If a plugin exits or its audio stops responding, its output fades to silence and its row offers **Reload**. Reload restores that slot's most recently captured settings without restarting the other plugins. The host does not automatically bypass a failed effect; **OFF** or master bypass explicitly routes around it. Library's **Reload failed / missing effects** retries the affected slots. Startup restores the chain before allowing output, and an unavailable active effect keeps the microphone muted for review.
+
+Audio uses shared memory with one deadline for the whole chain; late output is discarded rather than replayed. The design adds no intentional extra buffer of latency, but process scheduling adds work and can miss deadlines at small buffer sizes. **AUDIO CPU** includes waiting time; its tooltip separately lists callback and plugin deadline misses. Memory grows with each worker. Editors remain separate native windows owned by their workers. These are fault-isolation processes running with your normal permissions. See [implementation and limits](docs/plugin-isolation.md).
 
 Mute and master bypass use 5 ms ramps. The dry bypass path aligns with reported plugin latency up to one second; plugins continue processing while master bypass is on. Invalid input/output samples are replaced with zero and final output is bounded to full scale. Hover over **AUDIO CPU** for callback deadline misses, invalid samples and limited output samples; these counters are diagnostics, not true-peak measurements.
 
-An interrupted session starts in **SAFE START**, with third-party effects paused, their settings preserved and the microphone muted. Use an effect's **Retry** to restore it individually, or **Library → Retry missing effects** to restore all; audio stays muted until you unmute. Automatic scanning cannot restore the remaining paused effects. `--safe-mode` forces this behavior. The running host can be asked to save and exit with `CrystalVoice.exe --quit`; closing the main window still hides it to the tray.
+An interrupted session starts in **SAFE START**, with third-party effects paused, their settings preserved and the microphone muted. Use an effect's **Retry** to restore it individually, or **Library → Reload failed / missing effects** to restore all; audio stays muted until you unmute. Automatic scanning cannot restore the remaining paused effects or restart crashed workers. `--safe-mode` forces this behavior. The running host can be asked to save and exit with `CrystalVoice.exe --quit`; closing the main window still hides it to the tray.
 
 ## What changed from MicVST
 
@@ -49,7 +57,8 @@ An interrupted session starts in **SAFE START**, with third-party effects paused
 - Cable discovery no longer switches the current audio device. Failed changes preserve the previous requested route and WASAPI mode. Hot-unplug keeps the selected device names instead of saving a fallback. Runtime driver errors reach the UI safely; old errors are discarded after a restart. Low-latency open failures retry the same endpoints in shared mode.
 - Missing or failed effects stay in their original positions with preset data preserved. Already cached effects can be used while scanning continues. The effect picker updates with the library and retains its search and selected VST3 class.
 - VST3 class identifiers are saved, including multiple effects inside the same bundle. Bundle/binary cache aliases no longer cause a scan on every launch.
-- Row actions use stable effect identities and safe callbacks. A plugin has one editor window; closing it saves its parameters. Plugins without a custom editor can use the generic parameter editor.
+- Each VST3 instance owns a process for loading, DSP, state and its editor. Faulted instances retain settings and offer individual reload; healthy instances keep running. Workers are terminated when their host exits, including abnormal exits.
+- Row actions use stable effect identities and safe callbacks. A plugin has one editor window; closing it schedules a parameter snapshot. Plugins without a custom editor can use the generic parameter editor inside their worker.
 - Settings and the scan cache are written atomically. A valid previous settings file is kept as `config.xml.bak` and used if the main file is damaged.
 - Named chain presets with plugin parameter blobs, import/export, pinned startup choices, transactional chain loading and path-independent plugin restoration.
 - Cached/debounced parameter snapshots, coalesced background session writes, smooth mute/bypass, finite-sample protection and interrupted-session recovery with individual effect retry.
@@ -68,7 +77,7 @@ ctest --test-dir build -C Release --output-on-failure
 
 Portable binary: `build/CrystalVoice_artefacts/Release/CrystalVoice.exe`. The static MSVC runtime avoids a Visual C++ Redistributable dependency.
 
-Regression tests cover audio graph processing, scanning and cache invalidation, missing-plugin restoration, device restart/mode fallback and rollback, settings recovery, VST3 identity, row reordering and live picker interactions. Engine tests use in-memory devices with WASAPI disabled, so they do not open real audio endpoints. Windows CI runs the same Release build and tests; tag releases are published only after tests pass.
+Regression tests cover worker creation/DSP/state failures, native access violations, hung workers, stale audio rejection, independent state and reload, worker cleanup after host death, audio graph processing, scanning and cache invalidation, missing-plugin restoration, device restart/mode fallback and rollback, settings recovery, VST3 identity, row reordering and live picker interactions. Engine tests use in-memory devices with WASAPI disabled, so they do not open real audio endpoints. Windows CI runs the same Release build and tests; tag releases are published only after tests pass.
 
 See [validation results and remaining manual checks](docs/validation.md) for the local hardware smoke test and resource measurements.
 

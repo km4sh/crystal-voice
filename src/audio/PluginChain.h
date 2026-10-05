@@ -16,7 +16,7 @@ public:
         ~StateObserver() override;
         bool dirty() const { return revision.load() != captured; }
         uint64_t generation() const { return revision.load(); }
-        void capture(); // Caller must quiesce graph processing first.
+        void capture(); // Local processors need a graph gate; isolated processors serialize in their worker.
         void acceptState (const juce::MemoryBlock& state) { cached = state; captured = revision.load(); }
         juce::MemoryBlock cached;
     private:
@@ -68,6 +68,7 @@ public:
     int indexOf (juce::uint32 id) const;
 
     void removePlugin (int index);
+    void replaceWithLast (int index); // Preserve the slot ID, order and bypass when reloading one worker.
     void movePlugin (int from, int to);
     void setBypass (int index, bool shouldBypass);
 

@@ -4,7 +4,10 @@ Validated on 2026-10-06 with Windows 11 Pro x64 (build 26200), Visual Studio 202
 
 ## Automated checks
 
-Release application and test builds succeed. CTest reports **132 cases, 1222 assertions passed, 0 failed**. Coverage includes:
+Release application and test builds succeed. CTest reports **147 cases, 1336 assertions passed, 0 failed**. Coverage includes:
+
+- Actual per-instance child processes: duplicate classes with independent parameters/PIDs; creation, DSP and state process exits; a native access violation; hung DSP/state functions; other workers continuing during slow serialization; rejection of oversized blocks and discarded late output.
+- Individual worker reload retaining its stable slot, parameters and healthy workers; failed staged state restoration preserving the live chain; startup state failure retaining its blob and muting the microphone; hung-worker detection after audio submission stops; child cleanup when the host exits without running destructors.
 
 - Relocated legacy/new plugin identities, renamed effects and rejection of ambiguous installations or incorrect vendors.
 - Named preset parameter/order/bypass round trips, startup/session separation, modified-session persistence and atomic staged load failure preserving the live nodes and audio route.
@@ -41,7 +44,17 @@ Detection runs over every audio sample with coefficients prepared at the device'
 
 Rendering the same disconnected profile before and after this change produces an identical PNG SHA-256 (`c1f20b00232042ad468ccb01b0cd3f37939f01b2e064afdd0c3b59ca61324758`), confirming the static styling/layout is unchanged.
 
-## Core upgrade smoke test, 2026-10-06
+## Process isolation smoke test, 2026-10-06
+
+The Release executable ran RNNoise → mono-to-stereo → TDR Nova in a separate test profile on MiniFuse 2 → VB-CABLE at 48 kHz / 480 samples. Module inspection confirmed the main process loaded neither VST3 DLL; each worker contained only its own effect. Both rows displayed `isolated`, and RNNoise's child-owned native editor restored VAD threshold 0.85.
+
+Changing the threshold to 0.50 updated the debounced session snapshot while the pinned preset remained at 0.85 and Nova's state remained identical. The RNNoise worker was then deliberately terminated. The main process and Nova's worker stayed alive, the interface offered Reload and showed EFFECT FAILED, and output settled to zero. Reload created a new RNNoise worker and restored 0.50; Nova's PID was unchanged. Its independent editor displayed the restored 0.50. Saving `--quit` removed the recovery marker and terminated both workers, including an open editor.
+
+For a quiet 30.53-second run in the tray with fresh workers, the host and its two workers averaged a **132.26 MiB summed working set**, **126.71 MiB summed private bytes**, and **0.640% whole-machine CPU** on the 16-logical-processor Ryzen 7 9700X. Summed working sets can count shared pages more than once. Returning to the main window showed **0 callback deadline misses and 0 plugin deadline misses**. Host latency remained the reported 33.8 ms, including Nova's 3.8 ms report; this is not a round-trip cable measurement. There was no sustained speech and no plugin editor open during that tray sample. The earlier in-process measurements below have a different build and retain their original scope.
+
+The normal profile was backed up and its original MiniFuse/CABLE routing, empty chain and startup choices retained. Parameter edits, pinned presets and injected faults were confined to test profiles. The documentation image was rerendered from actual components and disconnected workers. See [the process architecture and limits](plugin-isolation.md).
+
+## Earlier core upgrade smoke test, 2026-10-06
 
 The Release host was run with an isolated profile containing the older RNNoise → mono-to-stereo → TDR Nova configuration and its original plugin state blobs. Both old absolute installation paths were absent. The current cache resolved RNNoise and TDR Nova from `Program Files/Common Files/VST3`; all three stages loaded with the MiniFuse 2 → CABLE route at 48 kHz / 480 samples.
 
@@ -49,7 +62,7 @@ The native PRESETS menu saved a named `Voice chain` preset and pinned it for sta
 
 The user's normal profile was backed up before testing. It retains its original MiniFuse/CABLE routing and empty effect chain; test presets and parameter edits are confined to the isolated profile. This is a live UI/recovery check, not a sustained-speech quality measurement or a full plugin fault-isolation test.
 
-State serialization deliberately quiesces plugin processing while callbacks continue and output fades to silence/back. It does not provide continuous wet audio during a slow snapshot. Snapshot and plugin creation/state functions still execute in the host; native faults or a stuck state function can terminate/stall it. Safe startup prevents automatically repeating the load after an interrupted session. Master bypass retains plugin processing to keep its state warm; its dry delay compensation is capped at one second.
+That earlier build serialized plugin state in the main process while quiescing the graph. The current build serializes in each worker and keeps the other workers active, with bounded control response waits. A snapshot can still interrupt wet audio in a serial chain. Safe startup prevents automatically repeating effects after a host interruption; master bypass keeps healthy plugin DSP warm and caps dry delay compensation at one second.
 
 ## Earlier interface smoke test, 2026-10-04
 
@@ -87,4 +100,4 @@ The original host was restored after testing. Its configuration hash and all thr
 
 ## Checks still required
 
-Additional display scales, tray hide/show interactions and physical unplug/reconnect remain unverified for the console build. An earlier interactive preview verified picker search/Enter/cancel; broader plugin editor coverage is still needed. Further coverage should include Windows 10 and additional audio interfaces/VST3 effects. Scanning is isolated in child processes; plugin loading and real-time processing run in the host, so a faulty third-party plugin can still terminate it.
+Additional display scales and physical unplug/reconnect remain unverified for the console build. Returning from a tray run was checked for the isolated build. Broader child-owned plugin editor coverage, tiny buffers, long chains and sustained speech under CPU pressure still need manual testing. Further coverage should include Windows 10 and additional audio interfaces/VST3 effects. Scanning and every hosted VST3 instance use child processes; drivers, the main graph, UI and built-in channel converters remain in the main process.

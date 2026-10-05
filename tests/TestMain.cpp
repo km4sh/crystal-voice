@@ -1,6 +1,12 @@
 #include <juce_core/juce_core.h>
 #include <iostream>
 #include "audio/Metering.h"
+#include "audio/isolation/PluginWorker.h"
+#include "audio/isolation/IsolatedPlugin.h"
+#include "IsolationFixtures.h"
+#if JUCE_WINDOWS
+ extern "C" __declspec(dllimport) unsigned int __stdcall SetErrorMode (unsigned int);
+#endif
 
 // Smoke-Test: beweist, dass der UnitTestRunner läuft.
 struct SmokeTest : juce::UnitTest
@@ -152,9 +158,30 @@ struct PersistenceTest : juce::UnitTest
 };
 static PersistenceTest persistenceTest;
 
-int main (int, char**)
+int main (int argc, char** argv)
 {
     juce::ScopedJuceInitialiser_GUI initialiseJuce;
+    juce::StringArray arguments;
+    for (int index = 1; index < argc; ++index) arguments.add (argv[index]);
+    const auto commandLine = arguments.joinIntoString (" ");
+    if (isolation::PluginWorker::isWorkerCommandLine (commandLine))
+    {
+       #if JUCE_WINDOWS
+        // Fault fixtures must exit silently, matching the production worker.
+        SetErrorMode (0x8003);
+       #endif
+        isolation::PluginWorker worker ([] { juce::MessageManager::getInstance()->stopDispatchLoop(); }, isolationTest::create);
+        if (! worker.connect (commandLine)) return 1;
+        juce::MessageManager::getInstance()->runDispatchLoop(); return 0;
+    }
+    if (argc == 3 && juce::String (argv[1]) == "--isolation-owner")
+    {
+        juce::String error;
+        auto plugin = IsolatedPlugin::create (isolationTest::description ("gain"), 48000, 480, error);
+        if (plugin == nullptr || ! juce::File (juce::String (argv[2])).replaceWithText (juce::String (plugin->workerProcessId()))) return 2;
+        juce::Thread::sleep (300);
+        std::_Exit (0); // Deliberately skip destructors: Windows must close the worker job.
+    }
     juce::UnitTestRunner runner;
     runner.setAssertOnFailure (false);
     runner.runAllTests();

@@ -27,6 +27,8 @@ add_library(MicVSTCore STATIC
     src/audio/Metering.cpp
     src/audio/PluginLocations.cpp
     src/audio/PluginIdentity.cpp
+    src/audio/isolation/AudioTransport.cpp
+    src/audio/isolation/IsolatedPlugin.cpp
     src/audio/GraphConnections.cpp
     src/audio/ScanCoordinator.cpp
     src/state/Persistence.cpp
@@ -42,6 +44,9 @@ target_link_libraries(MicVSTCore PUBLIC
     juce::juce_core
     juce::juce_data_structures
 )
+if(WIN32)
+    target_link_libraries(MicVSTCore PUBLIC avrt)
+endif()
 
 # --- GUI application ---
 juce_add_gui_app(CrystalVoice
@@ -63,6 +68,7 @@ juce_add_binary_data(MicVSTData SOURCES
 
 target_sources(CrystalVoice PRIVATE
     src/Main.cpp
+    src/audio/isolation/PluginWorker.cpp
     src/audio/AudioEngine.cpp
     src/audio/PluginChain.cpp
     src/ui/MainComponent.cpp
@@ -104,6 +110,8 @@ target_sources(MicVSTTests PRIVATE
     tests/VuMeterTests.cpp
     tests/PluginLocationsTests.cpp
     tests/CoreFeaturesTests.cpp
+    tests/IsolationTests.cpp
+    src/audio/isolation/PluginWorker.cpp
     src/ui/PluginListView.cpp
     src/ui/LevelMeterComponent.cpp
     src/ui/DevicePanel.cpp

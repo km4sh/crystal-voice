@@ -63,6 +63,9 @@ public:
     bool isPresetModified() const { return presetModified || (pluginChain != nullptr && pluginChain->hasDirtyStates()); }
     void markPresetModified() { presetModified = true; }
     std::function<void()> onChainReplacing;
+    std::function<void()> onPluginStatusChanged;
+    int getFailedPluginCount() const;
+    uint64_t getPluginDeadlineMisses() const;
     uint64_t getInvalidSamples() const { return invalidSamples.load(); }
     uint64_t getClippedSamples() const { return clippedSamples.load(); }
     uint64_t getOverruns() const { return overruns.load(); }
@@ -111,6 +114,7 @@ public:
     void rebuildGraph();   // Graph-Verbindungen neu aufbauen (inkl. Mono->Stereo-Fanout)
 
 private:
+    juce::String observedPluginHealth;
     // Playhead, der dem Graph (und damit allen Plugins) durchgehend "Transport läuft"
     // meldet. Nötig, weil der Default-Playhead des AudioProcessorPlayer isPlaying NICHT
     // setzt — manche Routing/Streaming-Plugins senden aber nur bei laufendem Transport.
@@ -167,7 +171,7 @@ private:
     LevelMeter inputMeter, outputMeter;
     OutputSafety outputSafety;
     juce::AudioBuffer<float> cleanInput;
-    std::atomic<bool> takingSnapshot { false };
+    std::atomic<bool> takingSnapshot { false }, restoringChain { false };
     std::atomic<int> audioReaders { 0 };
     std::atomic<uint64_t> invalidSamples { 0 }, clippedSamples { 0 }, overruns { 0 };
     juce::String currentPreset, currentPresetName, startupPreset, startupPresetName;

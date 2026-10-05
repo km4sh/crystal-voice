@@ -8,6 +8,7 @@
 #include "ui/TrayIcon.h"
 #include "ui/Theme.h"
 #include "audio/DeviceSelection.h"
+#include "audio/isolation/PluginWorker.h"
 
 #if JUCE_WINDOWS
  // Bewusst kein <windows.h>: das Header pollutet nachfolgende JUCE-Header (Makrokonflikte
@@ -49,7 +50,8 @@ public:
     bool moreThanOneInstanceAllowed() override
     {
         const auto args = juce::JUCEApplicationBase::getCommandLineParameterArray();
-        return args.contains ("--scan") || args.contains ("--render-preview");
+        return args.contains ("--scan") || args.contains ("--render-preview")
+            || isolation::PluginWorker::isWorkerCommandLine (juce::JUCEApplicationBase::getCommandLineParameters());
     }
 
     // Kindmodus: genau EIN VST3 scannen und die Beschreibungen als XML in die --out-Datei
@@ -94,6 +96,16 @@ public:
 
     void initialise (const juce::String& commandLine) override
     {
+        if (isolation::PluginWorker::isWorkerCommandLine (commandLine))
+        {
+           #if JUCE_WINDOWS
+            SetErrorMode (kSemFailCriticalErrors | kSemNoGpFaultErrorBox | kSemNoOpenFileErrorBox);
+           #endif
+            juce::LookAndFeel::setDefaultLookAndFeel (&lookAndFeel);
+            worker = std::make_unique<isolation::PluginWorker> ([this] { quit(); });
+            if (! worker->connect (commandLine)) { setApplicationReturnValue (1); quit(); }
+            return;
+        }
         if (juce::JUCEApplicationBase::getCommandLineParameterArray().contains ("--scan"))
         {
             setApplicationReturnValue (runScanChildMode());
@@ -276,6 +288,7 @@ public:
     void shutdown() override
     {
         stopTimer(); cancelPendingUpdate();
+        worker = nullptr;
         tray = nullptr;
         mainWindow = nullptr;
         engine = nullptr;
@@ -364,6 +377,7 @@ private:
     };
 
     CrystalLookAndFeel lookAndFeel;
+    std::unique_ptr<isolation::PluginWorker> worker;
     std::unique_ptr<juce::FileLogger> logger;
     std::unique_ptr<AudioEngine> engine;
     std::unique_ptr<MainWindow> mainWindow;

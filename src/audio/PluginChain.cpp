@@ -1,4 +1,5 @@
 #include "audio/PluginChain.h"
+#include "audio/isolation/IsolatedPlugin.h"
 
 namespace
 {
@@ -126,10 +127,14 @@ bool PluginChain::addPlugin (juce::AudioPluginFormatManager& fm,
                              double sampleRate, int blockSize,
                              juce::String& errorOut)
 {
-    if (fm.getNumFormats() == 0)
-        juce::addDefaultFormatsToManager (fm);   // JUCE 8.0.13: addDefaultFormats() ist =delete
-
-    auto instance = fm.createPluginInstance (desc, sampleRate, blockSize, errorOut);
+    std::unique_ptr<juce::AudioPluginInstance> instance;
+    if (desc.pluginFormatName == "VST3")
+        instance = IsolatedPlugin::create (desc, sampleRate, blockSize, errorOut);
+    else
+    {
+        if (fm.getNumFormats() == 0) juce::addDefaultFormatsToManager (fm);
+        instance = fm.createPluginInstance (desc, sampleRate, blockSize, errorOut);
+    }
     if (instance == nullptr) return false;
 
     // NICHT enableAllBuses() (kann Aux-/Multi-Busse aktivieren und das Send-Routing
@@ -151,6 +156,8 @@ bool PluginChain::addPlugin (juce::AudioPluginFormatManager& fm,
     entry.format = desc.pluginFormatName;
     entry.classUid = juce::String::toHexString (desc.uniqueId != 0 ? desc.uniqueId : desc.deprecatedUid);
     entry.observer = std::make_shared<StateObserver> (node);
+    if (auto* isolated = dynamic_cast<IsolatedPlugin*> (node->getProcessor()))
+        entry.observer->acceptState (isolated->lastGoodState());
     entry.id = nextId++;
     return true;
 }
@@ -211,6 +218,19 @@ void PluginChain::movePlugin (int from, int to)
     auto e = chain[(size_t) from];
     chain.erase (chain.begin() + from);
     chain.insert (chain.begin() + to, e);
+}
+
+void PluginChain::replaceWithLast (int index)
+{
+    if (! juce::isPositiveAndBelow (index, (int) chain.size() - 1)) return;
+    auto& previous = chain[(size_t) index];
+    if (! previous.isUnavailable()) graph.removeNode (previous.node, juce::AudioProcessorGraph::UpdateKind::none);
+    const auto id = previous.id;
+    const bool bypassed = previous.bypassed;
+    previous = std::move (chain.back());
+    chain.pop_back();
+    chain[(size_t) index].id = id;
+    setBypass (index, bypassed);
 }
 
 void PluginChain::setBypass (int index, bool b)

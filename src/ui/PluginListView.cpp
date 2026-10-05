@@ -1,9 +1,15 @@
 #include "ui/PluginListView.h"
 #include "ui/PluginPicker.h"
 #include "ui/Theme.h"
+#include "audio/isolation/IsolatedPlugin.h"
 
 namespace
 {
+    IsolatedPlugin* isolatedFor (AudioEngine& engine, const PluginChain::Entry& entry)
+    {
+        auto node = engine.getGraph().getNodeForId (entry.node);
+        return node != nullptr ? dynamic_cast<IsolatedPlugin*> (node->getProcessor()) : nullptr;
+    }
     class PickerWindow : public juce::DocumentWindow
     {
     public:
@@ -21,10 +27,13 @@ PluginListView::Row::Row (PluginListView& parent, int i)
     : owner (parent), id (parent.engine.getChain().entries()[(size_t) i].id), index (i)
 {
     const auto& effect = owner.engine.getChain().entries()[(size_t) i];
+    auto* isolated = isolatedFor (owner.engine, effect);
+    const bool failed = isolated != nullptr && isolated->failed();
     setName (effect.displayName);
     setWantsKeyboardFocus (true);
     setViewportIgnoreDragFlag (true);
-    setTooltip (effect.displayName + "\n" + (effect.isUnavailable() ? effect.error : effect.manufacturer));
+    setTooltip (effect.displayName + "\n" + (effect.isUnavailable() ? effect.error : failed ? isolated->failureReason()
+        : isolated != nullptr ? "Independent plugin process: " + juce::String (isolated->workerProcessId()) : effect.manufacturer));
     enabledButton.setClickingTogglesState (true);
     enabledButton.setToggleState (! effect.bypassed, juce::dontSendNotification);
     enabledButton.setButtonText (effect.bypassed ? "OFF" : "ON");
@@ -32,8 +41,9 @@ PluginListView::Row::Row (PluginListView& parent, int i)
     enabledButton.setTooltip ("Enable or bypass this effect");
     enabledButton.onClick = [this] { owner.toggleBypass (id); };
     openButton.onClick = [this] { owner.openEditor (id); };
-    openButton.setTooltip (effect.isUnavailable() ? effect.error : "Open the effect editor");
-    openButton.setButtonText (effect.isUnavailable() ? "Retry" : "[ EDIT ]");
+    openButton.setTooltip (effect.isUnavailable() ? effect.error : failed ? isolated->failureReason() : "Open the effect editor");
+    openButton.setButtonText (effect.isUnavailable() ? "Retry" : failed ? "Reload" : "[ EDIT ]");
+    if (failed) openButton.setColour (juce::TextButton::textColourOffId, theme::danger);
     moreButton.onClick = [this] { owner.showRowMenu (id, &moreButton); };
     moreButton.setTooltip ("Move or remove this effect");
     addAndMakeVisible (enabledButton); addAndMakeVisible (moreButton);
@@ -53,10 +63,12 @@ void PluginListView::Row::paint (juce::Graphics& g)
     const int current = owner.engine.getChain().indexOf (id);
     if (current < 0) return;
     const auto& effect = owner.engine.getChain().entries()[(size_t) current];
+    auto* isolated = isolatedFor (owner.engine, effect);
+    const bool failed = isolated != nullptr && isolated->failed();
     auto bounds = getLocalBounds().toFloat().reduced (0.5f);
     g.setColour (dragging ? theme::raised : theme::background); g.fillRect (bounds);
     g.setColour (dragging || isMouseOver (true) ? theme::accent.withAlpha (0.6f) : theme::border); g.drawRect (bounds, 1);
-    const auto stateColour = effect.isUnavailable() ? theme::warning : effect.bypassed ? theme::muted : theme::accent;
+    const auto stateColour = failed ? theme::danger : effect.isUnavailable() ? theme::warning : effect.bypassed ? theme::muted : theme::accent;
     g.setColour (stateColour); g.fillRect (0, 0, 2, getHeight());
     g.setColour (theme::muted.withAlpha (0.6f));
     for (int column = 0; column < 2; ++column)
@@ -68,16 +80,17 @@ void PluginListView::Row::paint (juce::Graphics& g)
     g.setFont (theme::font (15, true));
     g.setColour (effect.bypassed ? theme::muted : theme::text);
     g.drawText (effect.displayName, 64, 10, juce::jmax (1, right - 64), 24, juce::Justification::centredLeft);
-    juce::String detail = effect.isUnavailable() ? "Unavailable - settings preserved" : effect.manufacturer;
-    if (auto* node = owner.engine.getGraph().getNodeForId (effect.node))
+    juce::String detail = failed ? "Process failed - settings retained" : effect.isUnavailable() ? "Unavailable - settings preserved" : effect.manufacturer;
+    if (auto* node = owner.engine.getGraph().getNodeForId (effect.node); node != nullptr && ! failed)
     {
         auto* processor = node->getProcessor();
         auto* device = owner.engine.getDeviceManager().getCurrentAudioDevice();
         const double rate = device != nullptr ? device->getCurrentSampleRate() : 48000.0;
         detail << " / " << processor->getMainBusNumInputChannels() << ">" << processor->getMainBusNumOutputChannels()
                << " / " << juce::String (rate > 0 ? processor->getLatencySamples() * 1000.0 / rate : 0, 1) << " ms";
+        if (isolated != nullptr) detail << " / isolated";
     }
-    g.setColour (effect.isUnavailable() ? theme::warning : theme::muted); g.setFont (theme::font (11));
+    g.setColour (failed ? theme::danger : effect.isUnavailable() ? theme::warning : theme::muted); g.setFont (theme::font (11));
     g.drawText (detail, 64, 36, juce::jmax (1, right - 64), 20, juce::Justification::centredLeft);
 }
 
@@ -160,6 +173,7 @@ PluginListView::PluginListView (AudioEngine& e) : engine (e)
     presetsButton.onClick = [this] { showPresetMenu(); };
     presetsButton.setColour (juce::TextButton::textColourOffId, theme::cyan);
     engine.onChainReplacing = [this] { cancelDrag (false); editors.clear(); };
+    engine.onPluginStatusChanged = [this] { rebuildRows(); };
     foldersButton.setColour (juce::TextButton::textColourOffId, theme::cyan);
     bypassButton.setClickingTogglesState (true);
     bypassButton.setTooltip ("Compare with your dry microphone. Mute still applies.");
@@ -190,6 +204,7 @@ PluginListView::~PluginListView()
 {
     stopTimer(); engine.onScanProgress = nullptr; engine.onScanFinished = nullptr;
     engine.onChainReplacing = nullptr;
+    engine.onPluginStatusChanged = nullptr;
     rowAnimator.cancelAllAnimations (false);
     pickerWindow.reset(); editors.clear();
 }
@@ -434,7 +449,7 @@ void PluginListView::showFolderMenu()
     menu.addItem (-1, "Scans .vst3 effects; VST2 .dll is unsupported", false);
     menu.addItem (2, "Rescan all plugins", ! engine.isScanning());
     menu.addItem (3, "Retry skipped plugins", ! engine.isScanning() && ! engine.getSkippedPlugins().isEmpty());
-    menu.addItem (4, "Retry missing effects");
+    menu.addItem (4, "Reload failed / missing effects");
     juce::Component::SafePointer<PluginListView> safe (this);
     menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&foldersButton), [safe, folders] (int result)
     {
@@ -559,6 +574,13 @@ void PluginListView::openEditor (juce::uint32 id)
     for (auto* editor : editors) if (editor->entryId == id) { editor->setVisible (true); editor->toFront (true); return; }
     auto* node = engine.getGraph().getNodeForId (effect.node); if (node == nullptr) return;
     auto* processor = node->getProcessor();
+    if (auto* isolated = dynamic_cast<IsolatedPlugin*> (processor))
+    {
+        if (isolated->failed()) { engine.retryMissingPlugins (true, id); commitChange(); return; }
+        juce::String error;
+        if (! isolated->showRemoteEditor (error)) reportPresetError (error);
+        return;
+    }
     auto* content = processor->hasEditor() ? processor->createEditorAndMakeActive() : new juce::GenericAudioProcessorEditor (*processor);
     if (content == nullptr) return;
     juce::Component::SafePointer<PluginListView> safe (this);
