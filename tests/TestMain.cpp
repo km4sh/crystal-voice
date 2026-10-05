@@ -1,5 +1,12 @@
 #include <juce_core/juce_core.h>
+#include <iostream>
 #include "audio/Metering.h"
+#include "audio/isolation/PluginWorker.h"
+#include "audio/isolation/IsolatedPlugin.h"
+#include "IsolationFixtures.h"
+#if JUCE_WINDOWS
+ extern "C" __declspec(dllimport) unsigned int __stdcall SetErrorMode (unsigned int);
+#endif
 
 // Smoke-Test: beweist, dass der UnitTestRunner läuft.
 struct SmokeTest : juce::UnitTest
@@ -62,11 +69,12 @@ struct GraphConnectionsTest : juce::UnitTest
         const NodeID p1   { 10 };
         const NodeID p2   { 11 };
 
-        beginTest ("empty mono chain: input(1out) -> output(2in) = 1 Kanal");
+        beginTest ("mono voice reaches both channels of a stereo virtual microphone");
         {
             auto c = computeChainConnections ({ { in, 0, 1 }, { out, 2, 0 } });
-            expectEquals ((int) c.size(), 1);
+            expectEquals ((int) c.size(), 2);
             expect (c[0] == ChannelConnection { in, 0, out, 0 });
+            expect (c[1] == ChannelConnection { in, 0, out, 1 });
         }
 
         beginTest ("empty stereo chain: input(2out) -> output(2in) = 2 Kanäle");
@@ -150,15 +158,45 @@ struct PersistenceTest : juce::UnitTest
 };
 static PersistenceTest persistenceTest;
 
-int main (int, char**)
+int main (int argc, char** argv)
 {
+    juce::ScopedJuceInitialiser_GUI initialiseJuce;
+    juce::StringArray arguments;
+    for (int index = 1; index < argc; ++index) arguments.add (argv[index]);
+    const auto commandLine = arguments.joinIntoString (" ");
+    if (isolation::PluginWorker::isWorkerCommandLine (commandLine))
+    {
+       #if JUCE_WINDOWS
+        // Fault fixtures must exit silently, matching the production worker.
+        SetErrorMode (0x8003);
+       #endif
+        isolation::PluginWorker worker ([] { juce::MessageManager::getInstance()->stopDispatchLoop(); }, isolationTest::create);
+        if (! worker.connect (commandLine)) return 1;
+        juce::MessageManager::getInstance()->runDispatchLoop(); return 0;
+    }
+    if (argc == 3 && juce::String (argv[1]) == "--isolation-owner")
+    {
+        juce::String error;
+        auto plugin = IsolatedPlugin::create (isolationTest::description ("gain"), 48000, 480, error);
+        if (plugin == nullptr || ! juce::File (juce::String (argv[2])).replaceWithText (juce::String (plugin->workerProcessId()))) return 2;
+        juce::Thread::sleep (300);
+        std::_Exit (0); // Deliberately skip destructors: Windows must close the worker job.
+    }
     juce::UnitTestRunner runner;
     runner.setAssertOnFailure (false);
     runner.runAllTests();
 
-    int failures = 0;
+    int failures = 0, passes = 0;
     for (int i = 0; i < runner.getNumResults(); ++i)
-        failures += runner.getResult (i)->failures;
+    {
+        const auto* result = runner.getResult (i);
+        failures += result->failures;
+        passes += result->passes;
+        if (result->failures > 0)
+            std::cerr << result->unitTestName << ": " << result->subcategoryName << '\n'
+                      << result->messages.joinIntoString ("\n") << '\n';
+    }
+    std::cout << runner.getNumResults() << " cases, " << passes << " assertions passed, " << failures << " failed\n";
 
     if (failures > 0)
     {

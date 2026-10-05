@@ -1,181 +1,217 @@
 #include "ui/MainComponent.h"
-#include "audio/PluginChain.h"
+#include "ui/Theme.h"
 
 namespace
 {
-    juce::String howToText()
-    {
-        return
-            "How to use MicVST\n"
-            "\n"
-            "1)  Install a virtual audio cable\n"
-            "    VB-Cable (free) is recommended (link below). MicVST detects it automatically.\n"
-            "\n"
-            "2)  Pick your devices (top of the window)\n"
-            "    Input   =  your microphone\n"
-            "    Output  =  the virtual cable (e.g. \"CABLE Input\")\n"
-            "\n"
-            "3)  Build your plugin chain\n"
-            "    - \"+ Plugin\" opens a searchable list (grouped by manufacturer) of all VST3 effects\n"
-            "      and built-in nodes. Add effects you like (EQ, de-noise, compressor, ...).\n"
-            "    - Insert \"Mono -> Stereo\" where you want stereo (before it the chain runs\n"
-            "      mono = less CPU). \"Stereo -> Mono\" is available too.\n"
-            "    - Drag the handle on the left to reorder; the trash icon removes (with a prompt).\n"
-            "    - Double-click a plugin to open its editor.\n"
-            "    - \"Manage VST3 Folders\" adds plugins from other locations.\n"
-            "\n"
-            "4)  Use it in any app\n"
-            "    In Discord / OBS / Zoom / ..., select \"CABLE Output\" as the microphone.\n"
-            "\n"
-            "5)  That's it\n"
-            "    Settings are saved automatically. Closing the window keeps MicVST running in the\n"
-            "    tray (right-click the tray icon for options). Enable \"Run at startup\" to launch\n"
-            "    it silently on boot.\n"
-            "\n"
-            "Auto-Update-Check\n"
-            "    With \"Auto-Update-Check\" enabled, MicVST asks GitHub once on each start whether a\n"
-            "    newer version exists. No data is collected and there is no auto-installer - if an\n"
-            "    update is found, the version number turns into a link to the download.";
-    }
-
-    const char* const kRepoUrl = "https://github.com/philipz794/MicVST";
-
-    // Inhalt des How-To-Fensters: Anleitungstext + klickbare Links (VB-Cable, GitHub).
-    class HowToContent : public juce::Component
+    class HelpWindow : public juce::DocumentWindow
     {
     public:
-        HowToContent()
+        HelpWindow() : DocumentWindow ("Crystal Voice - Quick setup", theme::background, closeButton)
         {
-            body.setMultiLine (true);
-            body.setReadOnly (true);
-            body.setCaretVisible (false);
-            body.setScrollbarsShown (true);
-            body.setPopupMenuEnabled (false);
-            body.setColour (juce::TextEditor::backgroundColourId, juce::Colour (0xff1e1e1e));
-            body.setColour (juce::TextEditor::outlineColourId, juce::Colours::transparentBlack);
-            body.setColour (juce::TextEditor::textColourId, juce::Colours::white);
-            body.setFont (juce::Font (juce::FontOptions (15.0f)));
-            body.setText (howToText(), false);
-            addAndMakeVisible (body);
-
-            setupLink (vbCable, "Download VB-Cable  (vb-audio.com/Cable)", "https://vb-audio.com/Cable/");
-            setupLink (github,  "Check for updates on GitHub", kRepoUrl);
-        }
-
-        void resized() override
-        {
-            auto r = getLocalBounds().reduced (12);
-            github.setBounds (r.removeFromBottom (22));
-            r.removeFromBottom (6);
-            vbCable.setBounds (r.removeFromBottom (22));
-            r.removeFromBottom (10);
-            body.setBounds (r);
-        }
-
-    private:
-        void setupLink (juce::HyperlinkButton& b, const juce::String& text, const juce::String& url)
-        {
-            b.setButtonText (text);
-            b.setURL (juce::URL (url));
-            b.setJustificationType (juce::Justification::centredLeft);
-            b.setColour (juce::HyperlinkButton::textColourId, juce::Colours::orange);
-            addAndMakeVisible (b);
-        }
-
-        juce::TextEditor body;
-        juce::HyperlinkButton vbCable, github;
-    };
-
-    // Eigenes Fenster mit der Anleitung. Schließen versteckt nur (Instanz bleibt zum Wieder-Öffnen).
-    class HowToWindow : public juce::DocumentWindow
-    {
-    public:
-        HowToWindow()
-            : juce::DocumentWindow ("MicVST - How To", juce::Colours::darkgrey,
-                                    juce::DocumentWindow::closeButton)
-        {
-            setUsingNativeTitleBar (true);
-            setContentOwned (new HowToContent(), false);
-            setResizable (true, false);
-            centreWithSize (560, 560);
+            auto* body = new juce::TextEditor();
+            body->setMultiLine (true); body->setReadOnly (true); body->setCaretVisible (false);
+            body->setFont (theme::font (15));
+            body->setText (
+                "YOUR MICROPHONE, REFINED.\n\n"
+                "1. Choose your physical microphone in Microphone. For an audio interface, choose Channel 1 or Channel 2.\n\n"
+                "2. Choose CABLE Input as Destination. In your game, chat or streaming app, choose CABLE Output as the microphone.\n\n"
+                "3. Add VST3 effects. Search by name or manufacturer, then Add. Use Open to edit, the grip to reorder, or the row menu to move/remove.\n\n"
+                "Each VST3 instance runs in its own process, including its editor. If an effect crashes or stops responding, its output fades to silence. Use Reload on that row to restore the most recently captured settings. Other effects keep their own processes. Bypassing a failed effect passes the signal around it.\n\n"
+                "4. Mute mic silences the output. Bypass effects sends the unprocessed mic so you can compare.\n\n"
+                "5. Closing the main window keeps audio running in the tray. Right-click the tray icon to quit.\n\n"
+                "RNNoise requires 48 kHz. Choose matching sample rates in your audio device settings. Reported latency is a host estimate; the cable and receiving application add their own delay.\n\n"
+                "Settings are saved automatically in %APPDATA%\\CrystalVoice. Missing effects stay in the chain with their saved settings. Rescan after reinstalling a plugin.\n\n"
+                "PRESETS saves, loads, imports and exports complete effect chains including plugin parameters. Startup preset uses the saved version; later edits remain in the current session until you explicitly Save changes. Use last session at startup restores normal session recovery.\n\n"
+                "After an interrupted session, Safe start keeps third-party effects paused and the microphone muted. Use each effect's Retry to restore it individually, or Library > Reload failed / missing effects to restore all, then unmute. Startup also keeps the microphone muted if an active effect cannot be restored.\n\n"
+                "VB-CABLE: https://vb-audio.com/Cable/\nProject: https://github.com/km4sh/crystal-voice\n\n"
+                "FONT LICENSE // JETBRAINS MONO 2.304\n\n"
+                + juce::String::fromUTF8 (BinaryData::OFL_txt, BinaryData::OFL_txtSize), false);
+            theme::window (*this); setContentOwned (body, false);
+            setResizable (true, false); setResizeLimits (480, 440, 1000, 1000);
+            centreWithSize (580, 620);
         }
         void closeButtonPressed() override { setVisible (false); }
     };
+    juce::String levelText (LevelReading level)
+    {
+        if (level.vu < 0.00001f) return "-inf dB";
+        return juce::String (juce::Decibels::gainToDecibels (level.vu), 1) + " dB";
+    }
 }
 
-MainComponent::MainComponent (AudioEngine& e) : engine (e)
+MainComponent::MainComponent (AudioEngine& e) : engine (e), devicePanel (e), pluginList (e)
 {
-    devicePanel = std::make_unique<DevicePanel> (engine);
-    addAndMakeVisible (*devicePanel);
-    addAndMakeVisible (inMeter);
-    addAndMakeVisible (outMeter);
-    addAndMakeVisible (dbScale);
-    addAndMakeVisible (inLabel);
-    addAndMakeVisible (outLabel);
-    inLabel.setJustificationType (juce::Justification::centredLeft);
-    outLabel.setJustificationType (juce::Justification::centredLeft);
-
-    pluginList = std::make_unique<PluginListView> (engine);
-    addAndMakeVisible (*pluginList);
-
-    addAndMakeVisible (howToBtn);
-    howToBtn.setTooltip ("Quick setup guide");
-    howToBtn.onClick = [this] { showHowTo(); };
-
-    currentVersion = juce::JUCEApplication::getInstance()->getApplicationVersion();
-    versionLink.setButtonText ("v" + currentVersion);
-    versionLink.setURL (juce::URL (kRepoUrl));
-    versionLink.setTooltip ("MicVST on GitHub");
-    versionLink.setJustificationType (juce::Justification::centredLeft);
-    versionLink.setColour (juce::HyperlinkButton::textColourId, juce::Colours::grey);
-    addAndMakeVisible (versionLink);
-
-    updateToggle.setTooltip ("Check GitHub on startup whether a newer version exists (opt-in, no data collected)");
-    updateToggle.onClick = [this]
-    {
-        const bool on = updateToggle.getToggleState();
-        if (onUpdateCheckToggled) onUpdateCheckToggled (on);
-        if (on) startUpdateCheck();
-    };
-    addAndMakeVisible (updateToggle);
-
-    addAndMakeVisible (autostartToggle);
-    autostartToggle.setTooltip ("Launch MicVST silently into the tray when Windows starts");
+    for (auto* component : std::initializer_list<juce::Component*> {
+        &devicePanel, &pluginList, &inMeter, &outMeter, &inScale, &outScale, &inLabel, &outLabel,
+        &inReading, &outReading, &status, &performance, &muteButton,
+        &howToButton, &autostartToggle, &updateToggle, &versionLink }) addAndMakeVisible (component);
+    for (auto* label : { &inLabel, &outLabel })
+    { label->setFont (theme::font (11, true)); label->setColour (juce::Label::textColourId, theme::muted); }
+    for (auto* label : { &inReading, &outReading })
+    { label->setFont (theme::font (13, true)); label->setJustificationType (juce::Justification::centredRight);
+      label->setText ("-inf dB", juce::dontSendNotification); }
+    status.setFont (theme::font (13, true));
+    status.setJustificationType (juce::Justification::centredLeft);
+    performance.setFont (theme::font (12));
+    performance.setColour (juce::Label::textColourId, theme::muted);
+    muteButton.setClickingTogglesState (true);
+    muteButton.setColour (juce::TextButton::buttonOnColourId, theme::danger.withAlpha (0.16f));
+    muteButton.setColour (juce::TextButton::textColourOnId, theme::danger);
+    muteButton.onClick = [this] { engine.setMuted (muteButton.getToggleState()); refreshStatus(); };
+    howToButton.onClick = [this] { showHowTo(); };
+    howToButton.setColour (juce::TextButton::textColourOffId, theme::warning);
     autostartToggle.setToggleState (AutostartRegistry::isEnabled(), juce::dontSendNotification);
     autostartToggle.onClick = [this] { AutostartRegistry::setEnabled (autostartToggle.getToggleState()); };
-
-    cableHint.setColour (juce::HyperlinkButton::textColourId, juce::Colours::orange);
-    cableHint.setJustificationType (juce::Justification::centredLeft);
-    cableHint.setTooltip ("https://vb-audio.com/Cable/");
-    addChildComponent (cableHint);   // Sichtbarkeit steuert updateCableHint()
-
-    engine.onStatusChanged = [this] { updateCableHint(); };
-    updateCableHint();
-
-    setSize (560, 560);
-    startTimerHz (30);
+    autostartToggle.setTooltip ("Start silently in the tray when you sign in to Windows");
+    if (juce::JUCEApplicationBase::getCommandLineParameterArray().contains ("--profile"))
+    { autostartToggle.setEnabled (false); autostartToggle.setTooltip ("Startup is disabled in an isolated test profile."); }
+    updateToggle.onClick = [this]
+    {
+        const bool enabled = updateToggle.getToggleState();
+        if (onUpdateCheckToggled) onUpdateCheckToggled (enabled);
+        if (enabled) startUpdateCheck();
+    };
+    currentVersion = juce::JUCEApplication::getInstance()->getApplicationVersion();
+    versionLink.setButtonText ("v" + currentVersion);
+    versionLink.setFont (theme::font (12), false);
+    versionLink.setURL (juce::URL ("https://github.com/km4sh/crystal-voice"));
+    versionLink.setColour (juce::HyperlinkButton::textColourId, theme::muted);
+    engine.onStatusChanged = [this] { refreshStatus(); };
+    refreshStatus(); setSize (1000, 700); startTimerHz (24);
 }
 
 MainComponent::~MainComponent()
 {
     stopTimer();
+    if (observedWindow != nullptr) observedWindow->removeComponentListener (this);
     engine.onStatusChanged = nullptr;
+}
+
+void MainComponent::paint (juce::Graphics& g)
+{
+    g.fillAll (theme::background);
+    const WorkspaceLayout layout (getLocalBounds());
+    // Static, subdued technical grid. Only the two meters repaint at audio UI cadence.
+    g.setColour (theme::border.withAlpha (0.15f));
+    for (int x = 20; x < getWidth(); x += 32) g.drawVerticalLine (x, 0, (float) getHeight());
+    for (int y = 20; y < getHeight(); y += 32) g.drawHorizontalLine (y, 0, (float) getWidth());
+    auto title = layout.header;
+    theme::caption (g, "// REALTIME VOICE PROCESSOR", title.removeFromTop (18), theme::muted);
+    g.setColour (theme::accent); g.setFont (theme::font (30, true));
+    g.drawText ("CRYSTAL VOICE_", title.removeFromTop (38).withWidth (420), juce::Justification::centredLeft);
+    g.setColour (theme::muted); g.setFont (theme::font (12));
+    g.drawText ("MICROPHONE > EFFECTS > GAME / CHAT / STREAM", title.withWidth (440), juce::Justification::centredLeft);
+    g.setColour (theme::border); g.drawHorizontalLine (layout.header.getBottom() + 6, 20, (float) getWidth() - 20);
+    theme::card (g, inputMeterCard.toFloat()); theme::card (g, outputMeterCard.toFloat());
+    g.setColour (theme::border); g.drawHorizontalLine (layout.footer.getY() - 8, 20, (float) getWidth() - 20);
+}
+
+void MainComponent::resized()
+{
+    const WorkspaceLayout layout (getLocalBounds());
+    auto header = layout.header;
+    muteButton.setBounds (header.removeFromRight (132).withHeight (34).translated (0, 22));
+    header.removeFromRight (16);
+    status.setBounds (header.removeFromRight (210).withHeight (34).translated (0, 22));
+    auto footer = layout.footer;
+    versionLink.setBounds (footer.removeFromRight (60));
+    footer.removeFromRight (10); howToButton.setBounds (footer.removeFromRight (88));
+    updateToggle.setBounds (footer.removeFromLeft (174));
+    autostartToggle.setBounds (footer.removeFromLeft (190));
+    performance.setBounds (footer.reduced (12, 0));
+    devicePanel.setBounds (layout.routing);
+    inputMeterCard = layout.inputMeter; outputMeterCard = layout.outputMeter;
+    auto layoutMeter = [] (juce::Rectangle<int> bounds, juce::Label& label,
+                            juce::Label& reading, LevelMeterComponent& meter, DbScaleComponent& scale)
+    {
+        auto content = bounds.reduced (12, 10);
+        auto title = content.removeFromTop (20);
+        reading.setBounds (title.removeFromRight (86)); label.setBounds (title);
+        content.removeFromTop (6); meter.setBounds (content.removeFromTop (16));
+        content.removeFromTop (4); scale.setBounds (content.removeFromTop (16));
+    };
+    layoutMeter (inputMeterCard, inLabel, inReading, inMeter, inScale);
+    layoutMeter (outputMeterCard, outLabel, outReading, outMeter, outScale);
+    pluginList.setBounds (layout.effects);
+}
+
+void MainComponent::visibilityChanged()
+{
+    if (isShowing()) { readoutTicks = 0; refreshStatus(); startTimerHz (24); }
+    else stopTimer();
+}
+
+void MainComponent::parentHierarchyChanged()
+{
+    if (observedWindow != nullptr) observedWindow->removeComponentListener (this);
+    auto* window = getTopLevelComponent();
+    observedWindow = window != this ? window : nullptr;
+    if (observedWindow != nullptr) observedWindow->addComponentListener (this);
+    visibilityChanged();
+}
+
+void MainComponent::componentVisibilityChanged (juce::Component&)
+{
+    // JUCE does not call a child's visibilityChanged when only its window is shown.
+    // Follow the window too, including first launch and returning from the tray.
+    visibilityChanged();
 }
 
 void MainComponent::timerCallback()
 {
-    inMeter.setLevel (engine.inputLevel());
-    outMeter.setLevel (engine.outputLevel());
-    // Mit der Registry synchron halten (z. B. wenn der Tray den Autostart umschaltet).
-    autostartToggle.setToggleState (AutostartRegistry::isEnabled(), juce::dontSendNotification);
+    if (! isShowing()) return;
+    const auto in = engine.inputLevel(), out = engine.outputLevel();
+    inMeter.setLevel (in); outMeter.setLevel (out);
+    // The bars retain 24 Hz motion; numbers use that same VU envelope at 6 Hz.
+    if (readoutTicks++ % 4 == 0)
+    {
+        inReading.setText (levelText (in), juce::dontSendNotification);
+        outReading.setText (levelText (out), juce::dontSendNotification);
+        const auto peakText = [] (LevelReading level)
+        {
+            const auto dbText = [] (float gain)
+            { return gain > 0.0f ? juce::String (juce::Decibels::gainToDecibels (gain), 1) : juce::String ("-inf"); };
+            return "VU maximum (line): " + dbText (juce::jmax (level.vu, level.heldVu))
+                + " dBFS. Sample peak (clip check): " + dbText (level.heldPeak)
+                + " dBFS. The number shows VU average.";
+        };
+        inReading.setTooltip (peakText (in)); outReading.setTooltip (peakText (out));
+    }
+    inReading.setColour (juce::Label::textColourId, in.heldPeak >= 1.0f ? theme::danger : theme::text);
+    outReading.setColour (juce::Label::textColourId, out.heldPeak >= 1.0f ? theme::danger : theme::text);
+    // Registry access is limited to once per second, not every meter frame.
+    static int ticks = 0;
+    if (++ticks % 24 == 0)
+    {
+        autostartToggle.setToggleState (AutostartRegistry::isEnabled(), juce::dontSendNotification);
+        refreshStatus();
+    }
+}
+
+void MainComponent::refreshStatus()
+{
+    muteButton.setToggleState (engine.isMuted(), juce::dontSendNotification);
+    muteButton.setButtonText (engine.isMuted() ? "[ UNMUTE ]" : "[ MUTE MIC ]");
+    pluginList.refreshProcessingState();
+    const bool routed = engine.isRunning() && engine.getRequestedSetup().inputDeviceName.isNotEmpty()
+        && engine.getRequestedSetup().outputDeviceName.isNotEmpty();
+    status.setText (engine.isRecoveryMode() ? "[ SAFE START ]" : engine.isMuted() ? "[ MIC MUTED ]" : engine.getFailedPluginCount() > 0 ? "[ EFFECT FAILED ]" : engine.getDeviceError().isNotEmpty() ? "[ DEVICE ERROR ]"
+        : ! routed ? "[ NOT CONNECTED ]" : engine.isMasterBypassed() ? "[ DRY MIC ]" : "[ SIGNAL LIVE ]", juce::dontSendNotification);
+    status.setColour (juce::Label::textColourId, engine.isMuted() || engine.getFailedPluginCount() > 0 ? theme::danger
+        : routed && engine.getDeviceError().isEmpty() && ! engine.isMasterBypassed() ? theme::accent : theme::warning);
+    performance.setText ("AUDIO CPU " + juce::String (engine.getDeviceManager().getCpuUsage() * 100.0, 1) + "%",
+                         juce::dontSendNotification);
+    performance.setTooltip ("Callback deadline misses: " + juce::String (engine.getOverruns())
+        + "\nIsolated plugin deadline misses: " + juce::String (engine.getPluginDeadlineMisses())
+        + "\nFailed plugin processes: " + juce::String (engine.getFailedPluginCount())
+        + "\nInvalid samples replaced: " + juce::String (engine.getInvalidSamples())
+        + "\nOutput samples limited to full scale: " + juce::String (engine.getClippedSamples()));
 }
 
 void MainComponent::showHowTo()
 {
-    if (howToWindow == nullptr)
-        howToWindow.reset (new HowToWindow());
-    howToWindow->setVisible (true);
-    howToWindow->toFront (true);
+    if (! helpWindow) helpWindow = std::make_unique<HelpWindow>();
+    helpWindow->setVisible (true); helpWindow->toFront (true);
 }
 
 void MainComponent::setUpdateCheckEnabled (bool on, bool runIfOn)
@@ -186,79 +222,15 @@ void MainComponent::setUpdateCheckEnabled (bool on, bool runIfOn)
 
 void MainComponent::startUpdateCheck()
 {
-    // SafePointer: falls die Komponente vor dem (asynchronen) Ergebnis zerstört wird,
-    // läuft der Callback ins Leere statt in einen Dangling-this.
     juce::Component::SafePointer<MainComponent> safe (this);
-    updateChecker.start (currentVersion, [safe] (UpdateChecker::Result r)
+    updateChecker.start (currentVersion, [safe] (UpdateChecker::Result result)
     {
         if (auto* self = safe.getComponent())
         {
-            self->showUpdateAvailable (r.latestVersion, r.releaseUrl);
-            if (self->onUpdateFound) self->onUpdateFound (r.latestVersion, r.releaseUrl);
+            self->versionLink.setButtonText ("Update");
+            self->versionLink.setURL (juce::URL (result.releaseUrl));
+            self->versionLink.setColour (juce::HyperlinkButton::textColourId, theme::accent);
+            if (self->onUpdateFound) self->onUpdateFound (result.latestVersion, result.releaseUrl);
         }
     });
-}
-
-void MainComponent::showUpdateAvailable (const juce::String& latestVersion, const juce::String& url)
-{
-    versionLink.setButtonText ("v" + currentVersion + " > Update available!");
-    versionLink.setURL (juce::URL (url));
-    versionLink.setTooltip ("MicVST " + latestVersion + " is available on GitHub - click to open");
-    versionLink.setColour (juce::HyperlinkButton::textColourId, juce::Colours::orange);
-    resized();   // Text ist breiter -> Layout der unteren Leiste auffrischen
-}
-
-void MainComponent::updateCableHint()
-{
-    // Hinweis nur zeigen, wenn KEIN virtuelles Kabel installiert ist. Wird bei Geräte-
-    // Änderungen aufgerufen (z. B. nach VB-Cable-Installation verschwindet er von selbst).
-    const bool noCable = engine.detectCableOutput().isEmpty();
-    if (noCable != cableHint.isVisible())
-    {
-        cableHint.setVisible (noCable);
-        resized();
-    }
-}
-
-void MainComponent::resized()
-{
-    auto r = getLocalBounds().reduced (8);
-    auto bottomRow = r.removeFromBottom (24);
-    // Rechts, von außen nach innen: Run at startup (Rand) | Auto-Update-Check | How To.
-    autostartToggle.setBounds (bottomRow.removeFromRight (120));
-    bottomRow.removeFromRight (6);
-    updateToggle.setBounds (bottomRow.removeFromRight (150));
-    bottomRow.removeFromRight (6);
-    howToBtn.setBounds (bottomRow.removeFromRight (80));
-    // Links die klickbare Version: Breite an den Text anpassen, sonst ist der leere Reserve-
-    // Platz (für "> Update available!") mit-klickbar.
-    versionLink.setBounds (bottomRow);
-    versionLink.changeWidthToFitText();
-    r.removeFromBottom (4);
-
-    // Horizontale Meter: In-Zeile, Out-Zeile, gemeinsame dB-Skala darunter.
-    constexpr int labelW = 40;
-    auto inRow = r.removeFromTop (22);
-    inLabel.setBounds (inRow.removeFromLeft (labelW));
-    inMeter.setBounds (inRow.reduced (2, 1));
-    r.removeFromTop (4);
-    auto outRow = r.removeFromTop (22);
-    outLabel.setBounds (outRow.removeFromLeft (labelW));
-    outMeter.setBounds (outRow.reduced (2, 1));
-    auto scaleRow = r.removeFromTop (16);
-    scaleRow.removeFromLeft (labelW);                 // bündig unter den Metern
-    dbScale.setBounds (scaleRow.reduced (2, 0));
-    r.removeFromTop (8);
-
-    if (cableHint.isVisible())
-    {
-        cableHint.setBounds (r.removeFromTop (22));
-        r.removeFromTop (4);
-    }
-
-    // DevicePanel meldet seine Höhe selbst (3 Zeilen, +1 wenn die Buffer-Zeile sichtbar
-    // ist); die Plugin-Liste bekommt den ganzen Rest.
-    devicePanel->setBounds (r.removeFromTop (devicePanel->preferredHeight()));
-    r.removeFromTop (8);
-    pluginList->setBounds (r);
 }

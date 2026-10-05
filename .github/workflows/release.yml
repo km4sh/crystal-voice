@@ -1,10 +1,7 @@
 name: release
-
-# Push a tag like v1.0.0 to build the portable exe and publish a release with it.
 on:
   push:
     tags: [ 'v*' ]
-
 jobs:
   release:
     runs-on: windows-latest
@@ -12,29 +9,26 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
-
-      # Kein Generator gepinnt: windows-latest wechselt die VS-Version (aktuell VS2026);
-      # CMake nimmt automatisch das installierte Visual Studio des Runner-Images.
       - name: Configure
         run: cmake -S . -B build -A x64
-
       - name: Build
-        run: cmake --build build --config Release --target MicVST
-
+        run: cmake --build build --config Release --target CrystalVoice MicVSTTests --parallel 4
+      - name: Test
+        run: ctest --test-dir build -C Release --output-on-failure
       - name: SHA256
         id: sha
         shell: pwsh
-        run: echo "hash=$((Get-FileHash build/MicVST_artefacts/Release/MicVST.exe -Algorithm SHA256).Hash)" >> $env:GITHUB_OUTPUT
-
+        run: '"hash=$((Get-FileHash build/CrystalVoice_artefacts/Release/CrystalVoice.exe -Algorithm SHA256).Hash)" >> $env:GITHUB_OUTPUT'
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
-          files: build/MicVST_artefacts/Release/MicVST.exe
+          files: |
+            build/CrystalVoice_artefacts/Release/CrystalVoice.exe
+            LICENSE
+            resources/fonts/OFL.txt
           body: |
-            **MicVST ${{ github.ref_name }}** - portable Windows build (x64, statically linked; no installer, no Visual C++ Redistributable needed).
-
-            **Requires a virtual audio cable** - the free [VB-Cable](https://vb-audio.com/Cable/) is recommended (auto-detected). See the [README](https://github.com/philipz794/MicVST#readme) for setup.
-
-            The `.exe` is unsigned, so Windows SmartScreen may warn - *More info → Run anyway*.
-
-            **SHA-256** (`MicVST.exe`): `${{ steps.sha.outputs.hash }}`
+            **Crystal Voice ${{ github.ref_name }}** — portable Windows x64 build, statically linked.
+            Requires a virtual audio cable and separately installed VST3 effects.
+            [Setup and source](https://github.com/km4sh/crystal-voice#readme).
+            This executable is unsigned.
+            **SHA-256** (`CrystalVoice.exe`): `${{ steps.sha.outputs.hash }}`

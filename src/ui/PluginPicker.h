@@ -1,42 +1,37 @@
 #pragma once
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "ui/PluginSearch.h"
+#include <optional>
 
-// Popup-Inhalt für "+ Plugin" (in einer CallOutBox): Suchfeld oben, darunter die Liste.
-// Leere Suche: nach Hersteller gruppiert (nicht wählbare Kopfzeilen). Tippen filtert live
-// über Name + Hersteller (flache Liste "Name — Hersteller"). Enter/Doppelklick wählt,
-// Pfeiltasten navigieren (überspringen Kopfzeilen), Esc schließt.
-class PluginPickerComponent : public juce::Component,
-                              private juce::ListBoxModel,
-                              private juce::KeyListener
+class PluginPickerComponent : public juce::Component, private juce::ListBoxModel, private juce::KeyListener
 {
 public:
-    PluginPickerComponent (juce::Array<juce::PluginDescription> plugins,
-                           std::function<void (const juce::PluginDescription&)> onChosenIn);
+    PluginPickerComponent (juce::Array<juce::PluginDescription>,
+                          std::function<void (const juce::PluginDescription&)>, std::function<void()> onCancel);
+    void paint (juce::Graphics&) override;
     void resized() override;
-    void parentHierarchyChanged() override;   // Fokus ins Suchfeld, sobald wir auf dem Desktop sind
-
+    void focusSearch();
+    void setChoices (juce::Array<juce::PluginDescription>);
+    bool keyPressed (const juce::KeyPress& key) override { return keyPressed (key, this); }
 private:
-    struct Item { bool isHeader; juce::String text; int filteredIndex; };
-
-    void rebuildItems();
-    void chooseRow (int row);
-    void moveSelection (int delta);
-    int  firstSelectableRow() const;
-    void dismiss();
-
-    // ListBoxModel
-    int  getNumRows() override { return (int) items.size(); }
-    void paintListBoxItem (int row, juce::Graphics&, int w, int h, bool selected) override;
+    struct Item { bool header; juce::String text; int pluginIndex; };
+    void rebuildItems (bool preserveSelection = false);
+    void chooseRow (int);
+    void moveSelection (int);
+    int firstSelectableRow() const;
+    int getNumRows() override { return (int) items.size(); }
+    void paintListBoxItem (int, juce::Graphics&, int, int, bool) override;
     void listBoxItemDoubleClicked (int row, const juce::MouseEvent&) override { chooseRow (row); }
     void returnKeyPressed (int row) override { chooseRow (row); }
-
-    // KeyListener am Suchfeld: Pfeile/Enter/Esc abfangen, Rest tippt normal weiter.
+    void selectedRowsChanged (int row) override;
     bool keyPressed (const juce::KeyPress&, juce::Component*) override;
-
     juce::Array<juce::PluginDescription> all, filtered;
+    std::optional<juce::PluginDescription> selectionToRestore;
     std::vector<Item> items;
     std::function<void (const juce::PluginDescription&)> onChosen;
-    juce::TextEditor searchBox;
+    std::function<void()> onCancel;
+    juce::TextEditor search;
     juce::ListBox list { {}, this };
+    juce::TextButton addButton { "[ ADD ]" }, cancelButton { "[ CANCEL ]" };
+    juce::Label results, empty { {}, "No effects found. Try a different name or manufacturer." };
 };

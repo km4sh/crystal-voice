@@ -1,8 +1,52 @@
 # Changelog
 
-All notable changes to MicVST are documented here.
+All notable changes to Crystal Voice and its MicVST upstream are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 project follows [Semantic Versioning](https://semver.org/).
+
+## 1.2.0 - Unreleased
+
+### Added
+- Named effect-chain presets, internal plugin parameter storage, import/export and a separately pinned startup preset.
+- Interrupted-session detection, muted safe startup and explicit individual/all-effect restoration.
+- Callback deadline, invalid-sample and output clipping counters in the audio CPU tooltip.
+- `--safe-mode` startup and `--quit` for saving and exiting an existing host.
+- Crystal Voice identity, icons and separate settings/startup/update source.
+- Console UI inspired by threshold-34, with embedded JetBrains Mono Regular/Medium, a dark title bar, square controls, segmented meters and a two-column routing/effects workspace.
+- Searchable effect window and inline error states.
+- Animated drag previews, edge scrolling and Escape cancellation; audio order commits only when dropped.
+- Visible automatic scan folders, portable VST3 discovery and conventional Windows plugin directories.
+- Physical input channel selection, master mute/bypass and automatic mono fan-out.
+- Regression coverage for actual graph processing, routing, state recovery and picker interactions.
+
+### Fixed
+- Presets now relocate moved plugin installations using stable class/manufacturer metadata; ambiguous copies require an explicit choice.
+- Failed preset loading retains the current effect chain and open editors. Invalid state encodings and oversized lengths are rejected before decoding.
+- Non-finite samples no longer poison meter readings or reach the final output; outgoing samples are limited to full scale.
+- Mute and master bypass use 5 ms ramps; dry bypass compensates reported plugin latency up to one second.
+- Twitchy input/output meters and peak-based numbers now follow a VU-style rectified average with 300 ms ballistics; the existing display and dBFS scale are retained.
+- The thin marker now holds the same VU envelope's maximum for 200 ms with a 60 dB/s return, avoiding a persistent crest-factor gap from overlaying sample peaks on the VU bar. Actual sample peaks remain independent for clipping and tooltips, with a 500 ms hold and 20 dB/s release. Full-scale markers remain inside the frame, and both inputs and outputs warn at 0 dBFS sample peaks.
+- Windows `VST3_PATH` parsing no longer splits drive letters at colons; duplicate folder spellings are normalised and relative roots are rejected.
+- Meter/status updates stopping when the initially hidden main window becomes visible or returns from the tray.
+- Disconnected profiles losing their selected sample rate, and initial picker scrolling hiding the first selected effect.
+- Cable discovery changing the active audio route and silent failures when changing devices.
+- Runtime audio driver failures not reaching the interface, and Retry not reopening an existing device.
+- Queued errors from old streams overriding successful recovery, and restored devices retaining a reconnect warning.
+- Low-latency WASAPI open failures now fall back to shared mode using the same selected route; failed changes restore the previous mode.
+- An unchanged audio setup no longer prevents restarting a stopped device.
+- Open effect pickers refresh with the plugin library, retain search/class selection, and disable Add when the selected class disappears.
+- Virtual/loopback default microphones being selected on first launch.
+- Missing effects losing their order and saved presets; ambiguous VST3 bundle identities.
+- Stale asynchronous row actions and repeat editor windows.
+- Corrupted configuration recovery and repeated scans of unchanged plugin bundles.
+- Background meter work and excessive visible startup-registry polling.
+
+### Changed
+- Session writes run on a background thread with pending changes coalesced. Ordinary host settings reuse cached plugin state; parameter edits debounce for one second and explicit save/close/quit capture current parameters with a brief faded DSP pause.
+- Settings and scan cache use atomic replacement; valid previous configs have a recovery backup.
+- Startup imports an existing MicVST setup once, while retaining the original installation.
+- Windows build and release workflows target Crystal Voice and run CTest before publishing binaries.
+- Audio engine regressions use injectable in-memory devices; the test target disables WASAPI and never opens real audio endpoints.
 
 ## [1.1.1] - 2026-07-27
 

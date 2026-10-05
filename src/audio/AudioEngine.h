@@ -7,24 +7,39 @@
 #include "audio/MicVSTDeviceManager.h"
 #include "audio/ScanCoordinator.h"
 #include "state/Persistence.h"
+#include "state/Presets.h"
+#include "audio/OutputSafety.h"
 
 // Besitzt AudioDeviceManager + AudioProcessorGraph. Der Graph läuft über einen
 // internen AudioProcessorPlayer; AudioEngine bleibt der Device-Callback und
 // metert Input/Output rund um den Player herum.
 class AudioEngine : private juce::AudioIODeviceCallback,
-                    private juce::ChangeListener
+                    private juce::ChangeListener, private juce::Timer
 {
 public:
-    AudioEngine();
+    explicit AudioEngine (MicVSTDeviceManager::DeviceTypesFactory = {});
     ~AudioEngine() override;
 
     juce::String initialise (const juce::String& inputDeviceName,
-                             const juce::String& outputDeviceName);
+                             const juce::String& outputDeviceName, double sampleRate = 48000.0);
 
     // Laufzeit-Geräteumschaltung (vom DevicePanel): setzt Geräte/Samplerate/Buffer neu,
     // OHNE Graph + Plugin-Kette neu aufzubauen. sampleRate<=0 / bufferSize<=0 = unverändert.
-    void setDeviceConfig (const juce::String& input, const juce::String& output,
+    juce::String setDeviceConfig (const juce::String& input, const juce::String& output,
                           double sampleRate, int bufferSize);
+    juce::String setInputChannel (int channel);
+    juce::String retryAudioDevice();
+    void audioDeviceError (const juce::String&) override;
+    int getInputChannel() const { return inputChannel; }
+    juce::String getDeviceError() const { return deviceError; }
+    const juce::AudioDeviceManager::AudioDeviceSetup& getRequestedSetup() const { return requestedSetup; }
+    void setMuted (bool on) { muted.store (on); requestPersist(); }
+    bool isMuted() const { return muted.load(); }
+    void setMasterBypass (bool on) { masterBypass.store (on); requestPersist(); }
+    bool isMasterBypassed() const { return masterBypass.load(); }
+    void retryMissingPlugins (bool userInitiated = false, juce::uint32 onlyEntry = 0);
+    void setRecoveryMode (bool enabled) { recoveryMode = enabled; }
+    bool isRecoveryMode() const { return recoveryMode; }
 
     // Buffer-Wunsch des Users in Samples; 0 = Auto (Geräte-Default-Periode).
     // Wird von applyState gesetzt und in captureState persistiert.
@@ -35,8 +50,25 @@ public:
     // die Render->Capture selbst spiegeln. Leerer String = kein Kabel gefunden.
     juce::String detectCableOutput();
 
-    MicVSTState captureState();            // liest Devices + Plugin-Kette + Blobs
+    MicVSTState captureState (bool refreshParameters = true);
+    bool snapshotPluginStates (bool force = false);
     void          applyState (const MicVSTState&);   // lädt Devices + Plugins + setStateInformation
+    bool savePreset (const juce::String& name, bool asNew, juce::String& error);
+    bool loadPreset (const ChainPreset&, juce::String& error);
+    bool setStartupPreset (const juce::String& id, juce::String& error);
+    juce::String getCurrentPreset() const { return currentPreset; }
+    juce::String getCurrentPresetName() const { return currentPresetName; }
+    juce::String getStartupPreset() const { return startupPreset; }
+    juce::String getStartupPresetName() const { return startupPresetName; }
+    bool isPresetModified() const { return presetModified || (pluginChain != nullptr && pluginChain->hasDirtyStates()); }
+    void markPresetModified() { presetModified = true; }
+    std::function<void()> onChainReplacing;
+    std::function<void()> onPluginStatusChanged;
+    int getFailedPluginCount() const;
+    uint64_t getPluginDeadlineMisses() const;
+    uint64_t getInvalidSamples() const { return invalidSamples.load(); }
+    uint64_t getClippedSamples() const { return clippedSamples.load(); }
+    uint64_t getOverruns() const { return overruns.load(); }
 
     bool isRunning() const;                 // true wenn ein Audio-Device offen ist und spielt
     std::function<void()> onStatusChanged;  // wird bei Device-Änderungen aufgerufen (UI-Status)
@@ -47,11 +79,6 @@ public:
     // kennt) — ein direktes saveState(captureState()) würde diese Felder zurücksetzen.
     std::function<void()> onStateChanged;
     void requestPersist() { if (onStateChanged) onStateChanged(); }
-
-    // Factory-Reset (UI-Menü): Die App löscht config + Plugin-Cache und beendet sich
-    // für einen frischen Erststart. Engine-seitig nur der Durchreich-Callback.
-    std::function<void()> onFactoryResetRequested;
-    void requestFactoryReset() { if (onFactoryResetRequested) onFactoryResetRequested(); }
 
     MicVSTDeviceManager&            getDeviceManager() { return deviceManager; }
     juce::AudioProcessorGraph&      getGraph()         { return graph; }
@@ -77,6 +104,7 @@ public:
     void removePluginFolder (const juce::String& folder);
     void setPluginFolders (const juce::StringArray& f) { pluginFolders = f; }
     const juce::StringArray& getPluginFolders() const  { return pluginFolders; }
+    juce::StringArray getDefaultPluginFolders() const;
 
     static juce::File pluginCacheFile();
 
@@ -86,6 +114,7 @@ public:
     void rebuildGraph();   // Graph-Verbindungen neu aufbauen (inkl. Mono->Stereo-Fanout)
 
 private:
+    juce::String observedPluginHealth;
     // Playhead, der dem Graph (und damit allen Plugins) durchgehend "Transport läuft"
     // meldet. Nötig, weil der Default-Playhead des AudioProcessorPlayer isPlaying NICHT
     // setzt — manche Routing/Streaming-Plugins senden aber nur bei laufendem Transport.
@@ -120,6 +149,7 @@ private:
     void audioDeviceAboutToStart (juce::AudioIODevice*) override;
     void audioDeviceStopped() override;
     void changeListenerCallback (juce::ChangeBroadcaster*) override;
+    void timerCallback() override;
 
     MicVSTDeviceManager deviceManager;   // WASAPI Low-Latency bevorzugt, Shared als Fallback (siehe MicVSTDeviceManager)
     juce::AudioProcessorGraph graph;
@@ -129,15 +159,34 @@ private:
     juce::KnownPluginList knownPlugins;
     juce::StringArray pluginFolders;   // zusätzliche VST3-Suchordner (persistiert)
     int preferredBufferSize = 0;   // Buffer-Wunsch des Users in Samples; 0 = Auto
+    int inputChannel = 0;
+    std::atomic<bool> muted { false }, masterBypass { false };
+    juce::AudioDeviceManager::AudioDeviceSetup requestedSetup;
+    juce::String deviceError;
+    bool applyingDevice = false;
+    bool reconnectAttempted = false;
+    bool awaitingReconnect = false;
+    std::shared_ptr<bool> alive = std::make_shared<bool> (true);
+    std::atomic<uint64_t> deviceGeneration { 0 };
     LevelMeter inputMeter, outputMeter;
+    OutputSafety outputSafety;
+    juce::AudioBuffer<float> cleanInput;
+    std::atomic<bool> takingSnapshot { false }, restoringChain { false };
+    std::atomic<int> audioReaders { 0 };
+    std::atomic<uint64_t> invalidSamples { 0 }, clippedSamples { 0 }, overruns { 0 };
+    juce::String currentPreset, currentPresetName, startupPreset, startupPresetName;
+    bool presetModified = false, recoveryMode = false;
+    uint64_t observedRevision = 0;
+    double lastParameterChange = 0.0;
 
     std::unique_ptr<ScanCoordinator> scanner;      // != nullptr solange ein Scan läuft
     bool rescanQueued = false;   // merkt einen während des Scans angeforderten Folgescan vor
     juce::Array<SkippedPlugin> skippedPlugins;     // persistiert im Cache
-    juce::Array<PluginEntryState> pendingPlugins;  // Ketten-Restore wartet auf Scan-Ende
-    juce::StringArray scanRoots() const;           // JUCE-Default-VST3-Orte + Custom-Ordner
+    juce::StringArray scanRoots() const;           // Automatic and custom VST3 folders.
     juce::StringArray listVst3Files() const;       // Standard- + Custom-Ordner enumerieren
     void restoreChain (const juce::Array<PluginEntryState>& plugins);
+    void configureChannels (juce::AudioDeviceManager::AudioDeviceSetup&);
+    juce::String openDeviceSetup (const juce::AudioDeviceManager::AudioDeviceSetup&, const juce::String& typeName);
     void handleScanFinished (const ScanOutcome&);
     void pruneOutsideFolders();                    // Cache-Einträge entfernter Ordner löschen
 };

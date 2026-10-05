@@ -14,11 +14,15 @@ namespace meterScale
     }
 }
 
-// Horizontaler RMS-Balken (grün, von links) + Peak-Hold-Linie (gelb), mit
-// dezenten dB-Gitterlinien. setLevel() wird vom GUI-Timer aufgerufen.
-class LevelMeterComponent : public juce::Component
+// The unchanged segmented display follows the audio-thread VU envelope.
+// The thin line holds peaks of the same VU envelope for 200 ms, then releases at 60 dB/s.
+class LevelMeterComponent : public juce::Component, public juce::SettableTooltipClient
 {
 public:
+    LevelMeterComponent()
+    {
+        setTooltip ("Bar and number: VU average in dBFS. Thin line: recent maximum of the same VU level (200 ms hold, 60 dB/s release). Hover over the number for the separate sample peak. Red warns of sample peaks at 0 dBFS.");
+    }
     void setLevel (LevelReading r) { level = r; repaint(); }
     void paint (juce::Graphics& g) override;
 private:

@@ -1,9 +1,10 @@
 #include "state/AutostartRegistry.h"
+#include "state/Persistence.h"
 
 namespace
 {
     const juce::String keyPath =
-        "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Run\\MicVST";
+        "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Run\\CrystalVoice";
 }
 
 namespace AutostartRegistry
@@ -15,6 +16,8 @@ namespace AutostartRegistry
 
     void setEnabled (bool shouldRun)
     {
+        const auto defaultFolder = juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory).getChildFile ("CrystalVoice");
+        if (settingsDirectory() != defaultFolder) return;
         if (shouldRun)
         {
             auto exe = juce::File::getSpecialLocation (juce::File::currentExecutableFile)

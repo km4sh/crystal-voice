@@ -1,153 +1,108 @@
-# MicVST
+# Crystal Voice
 
-**Run your microphone through a chain of VST3 plugins and use the result as a virtual microphone in any app.**
+A small Windows VST3 host for a better microphone in games, calls and streams.
 
-MicVST is a lightweight Windows tray app. It takes one microphone, runs it through the VST3
-effects you choose (EQ, de-noise, compression, …) and sends the processed signal to a **virtual
-audio cable** - which any application (Discord, OBS, Zoom, Voicemod, games, …) can then use as a
-microphone input.
+**Microphone → effects → virtual audio cable → your application**
 
-Think of it as a minimal alternative to VoiceMeeter / Wave Link when all you want is:
-*one input, plugins on it, out as a virtual mic.*
+Crystal Voice is an independent project based on [MicVST](https://github.com/philipz794/MicVST). It keeps the native C++/JUCE audio engine and portable executable, with a redesigned interface, per-instance plugin process isolation, chain presets, safe startup and fixes to routing and settings persistence.
 
-Mic → MicVST (your VST3 chain) → VB-Cable (CABLE Input → CABLE Output) → Discord...
+![Crystal Voice interface](assets/screenshot.png)
 
+The screenshot is rendered from the real application components with an isolated, disconnected test profile. Plugin names and saved settings in it come from an example chain; third-party plugins are not bundled.
 
-![MicVST](assets/screenshot.png)
+## Use it
 
----
+1. Install a virtual audio cable, such as [VB-CABLE](https://vb-audio.com/Cable/).
+2. Run `CrystalVoice.exe`. Choose your physical **Microphone**, then choose **CABLE Input** as the destination. For an audio interface, select the correct physical input channel below the microphone.
+3. Click **[ + ADD ]**. Search VST3 effects by name or manufacturer; press Enter or click Add. Use **[ EDIT ]** to edit a plugin, **ON/OFF** to enable it, and the grip or row menu to reorder it. While dragging, other effects animate out of the way; hovering at the list edge scrolls it. Escape cancels a drag, and the audio chain changes only on drop.
+4. In the game, chat or streaming application, select **CABLE Output** as the microphone.
 
-## Download
+**[ MUTE MIC ]** silences the outgoing signal. **[ BYPASS ]** sends the dry microphone for comparison. Closing the window keeps audio running in the tray; right-click the tray icon to quit. Enable **Start with Windows** after placing the executable in a permanent folder.
 
-Grab the latest portable build - **no installer, no dependencies**, just run the `.exe`:
+RNNoise needs **48 kHz**. The device panel exposes supported sample rates and buffer sizes, shows errors inline and offers Retry. Reported latency is an estimate of the host path; the cable, receiving application and network add their own delay.
 
-**[Download MicVST.exe](https://github.com/philipz794/MicVST/releases/latest/download/MicVST.exe)**
+Both level bars and their numerical readings use VU-style average detection with about 300 ms to reach 99% of a steady level. The thin line shows a recent maximum of that same VU envelope, with a 200 ms hold and 60 dB/s release. It therefore follows the bar's level rather than a waveform's potentially much higher sample peaks. Hover over a number to see both the VU maximum and the separate sample peak in dBFS. Sample peaks retain a 500 ms hold and 20 dB/s release for clip checks; they turn the reading/line red at or above 0 dBFS, without moving the VU marker. Sample-peak detection does not oversample for true peaks. The layout, styling and dBFS scale are retained.
 
-(Statically linked, x64. No Visual C++ Redistributable required. Tested on **Windows 11**;
-Windows 10 x64 should work as well - it uses no Windows-11-specific APIs - but is untested.
-Feedback welcome!)
+**[ LIBRARY ] → Automatic scan folders** lists the folders scanned automatically and marks those that are installed. These include the [standard VST3 locations](https://steinbergmedia.github.io/vst3_dev_portal/pages/Technical%2BDocumentation/Locations%2BFormat/Plugin%2BLocations.html), the portable executable's `VST3` subfolder, semicolon-separated `VST3_PATH` entries, and common `VSTPlugins`, `Steinberg/VstPlugins`, `Common Files/VST2` and `Common Files/Steinberg/VST2` directories described by [Steinberg](https://helpcenter.steinberg.de/hc/en-us/articles/115000177084-VST-plug-in-locations-on-Windows). Only `.vst3` effects are discovered in those directories; VST2 `.dll` plugins are not supported. Use **Add VST3 folder** for other locations.
 
-The `.exe` is **not code-signed**, so Windows SmartScreen may warn *“Windows protected your
-PC”* - click **More info → Run anyway**. Each release lists the file’s **SHA-256** so you can
-verify your download (`Get-FileHash MicVST.exe -Algorithm SHA256` in PowerShell).
+### Save and restore an effect chain
 
-You also need a **virtual audio cable**. The free **[VB-Cable](https://vb-audio.com/Cable/)** is
-recommended - MicVST detects it automatically. VoiceMeeter and Virtual Audio Cable work too.
+Open **[ PRESETS ]**:
 
-## Setup
+- **Save as new preset** names and saves the effect order, per-effect bypass and each plugin's internal parameters. **Save changes** explicitly updates that saved version.
+- **Load preset** replaces the chain only after all effects load successfully. Missing/ambiguous effects or a plugin load error leave the current chain intact. Device routing, master mute and master bypass are retained.
+- **Startup preset (saved version)** pins a saved chain for the next launch. Ordinary parameter edits keep updating the current session without overwriting the pinned preset. Choose **Use last session at startup** to resume the current session instead.
+- **Export current chain** and **Import preset** use portable `.cvpreset` files. The receiving computer needs the same plugins; the files contain settings, not plugin binaries. Moving a plugin between folders is resolved by its format, manufacturer and class identifier when the match is unique.
 
-1. **Install [VB-Cable](https://vb-audio.com/Cable/)** and reboot. (If no cable is installed,
-   MicVST shows an orange hint with the download link.)
-2. **Run `MicVST.exe`.** On first start it picks your default microphone as input and the detected
-   virtual cable (e.g. *CABLE Input*) as output. Both are changeable in the audio setup and are
-   remembered across restarts.
-3. **Build your plugin chain** (bottom list, “+ Plugin”):
-   - “+ Plugin” opens a **searchable list** (grouped by manufacturer when empty) including all found
-     VST3 effects and built-in nodes (Mono → Stereo, Stereo → Mono); add any effects you like
-     (e.g. a noise-suppressor, EQ, compressor).
-   - optionally insert the built-in **Mono → Stereo** node at the point where you want stereo
-     (before it the chain runs mono = less CPU),
-   - drag rows by the **handle on the left** to reorder; the **trash icon on the right** removes a
-     plugin (with confirmation). Double-click a row to open the plugin’s editor.
-4. **In your target app** (Discord/OBS/Zoom/…), select **CABLE Output** as the microphone.
-5. Done. Device and plugin settings (including each plugin’s state) are saved automatically.
+Presets live in `%APPDATA%\CrystalVoice\Presets`. Startup presets choose the chain; **Start with Windows** separately controls whether the application launches at login. A `*` beside the current preset name indicates edits not yet saved to that named preset.
 
-### Run in background (tray, autostart)
+Session disk writes run in the background and merge pending changes. Parameter notifications and editor close are collected until about one second of inactivity; Save, Export, window hide and Quit also capture the latest parameters. Reading a plugin's state pauses that worker's DSP with a 5 ms fade to silence and back; other workers and audio callbacks continue. This can briefly interrupt wet audio in a serial chain, so save during a pause in speech when continuity matters. If a worker fails, saving retains its last successfully captured parameters.
 
-Right-click the tray icon → **“Run at Windows startup”** to launch MicVST silently into the tray on
-boot (no window, engine running). For a stable setup, copy the `.exe` to a fixed location first
-(e.g. `C:\Tools\MicVST\`) and enable autostart from there.
+### Each plugin has its own process
 
-## Features
+Every VST3 **instance** has a separate worker, including duplicate instances of the same plugin. Loading, DSP, state functions and its native or generic editor all run there. This follows the per-instance approach of Bitwig's [Individually hosting mode](https://www.bitwig.com/userguide/latest/vst_plug-in_handling_and_options/).
 
-- One mic → ordered **VST3 plugin chain** → virtual cable output
-- **Automatic cable detection** (VB-Cable / VoiceMeeter / Virtual Audio Cable) with a download hint
-  when none is found
-- **Channel-aware routing** - the chain can start mono and switch to stereo at a placeable
-  **Mono → Stereo** node (so a mono noise-suppressor doesn’t cost double)
-- Horizontal **in/out level meters** with a dB scale
-- **Drag-to-reorder** plugin list, per-row bypass, remove with confirmation, per-plugin editor
-  windows
-- Scans all standard VST3 locations (Program Files, %LOCALAPPDATA%, VST3_PATH); **add custom
-  VST3 folders** via “Manage VST3 Folders → Add folder...” Scanning runs **in the background**
-  (window opens instantly) in isolated helper processes with a 120-second timeout - a plugin that
-  crashes or hangs the scan is skipped (with a hint in the UI); you can skip the current plugin
-  mid-scan or “Retry skipped plugins” (with a generous 10-minute timeout) for huge shell plugins
-  like Waves WaveShell. Results are cached, so later starts are instant. Plugins shipped as bundle
-  folders (Acustica, Minimal Audio, UADx, ...) are rescanned only when the plugin binary inside
-  the bundle changes, not when vendor background services write logs into it. “Reset app (clear all
-  data)...” (also in the “Manage VST3 Folders” menu) deletes all settings and the plugin cache.
-  “Rescan all plugins” (also in the “Manage VST3 Folders” menu) rebuilds the cache from scratch.
-- Persistent settings (`%APPDATA%\MicVST\config.xml`), low latency, silent **tray autostart**
-- Optional, **opt-in update check** (off by default): one request to the GitHub releases API on
-  startup; no telemetry, no auto-installer
-- Single portable `.exe`, no install, no runtime dependencies
+If a plugin exits or its audio stops responding, its output fades to silence and its row offers **Reload**. Reload restores that slot's most recently captured settings without restarting the other plugins. The host does not automatically bypass a failed effect; **OFF** or master bypass explicitly routes around it. Library's **Reload failed / missing effects** retries the affected slots. Startup restores the chain before allowing output, and an unavailable active effect keeps the microphone muted for review.
 
-## Build from source
+Audio uses shared memory with one deadline for the whole chain; late output is discarded rather than replayed. The design adds no intentional extra buffer of latency, but process scheduling adds work and can miss deadlines at small buffer sizes. **AUDIO CPU** includes waiting time; its tooltip separately lists callback and plugin deadline misses. Memory grows with each worker. Editors remain separate native windows owned by their workers. These are fault-isolation processes running with your normal permissions. See [implementation and limits](docs/plugin-isolation.md).
 
-Requires **Windows x64** (tested on Windows 11; Windows 10 should work but is untested) and
-**Visual Studio 2022** with the *Desktop development with C++* workload (MSVC + Windows SDK +
-CMake). JUCE is fetched automatically via CMake `FetchContent` (JUCE 8.0.13) - nothing else to
-install.
+Mute and master bypass use 5 ms ramps. The dry bypass path aligns with reported plugin latency up to one second; plugins continue processing while master bypass is on. Invalid input/output samples are replaced with zero and final output is bounded to full scale. Hover over **AUDIO CPU** for callback deadline misses, invalid samples and limited output samples; these counters are diagnostics, not true-peak measurements.
+
+An interrupted session starts in **SAFE START**, with third-party effects paused, their settings preserved and the microphone muted. Use an effect's **Retry** to restore it individually, or **Library → Reload failed / missing effects** to restore all; audio stays muted until you unmute. Automatic scanning cannot restore the remaining paused effects or restart crashed workers. `--safe-mode` forces this behavior. The running host can be asked to save and exit with `CrystalVoice.exe --quit`; closing the main window still hides it to the tray.
+
+## What changed from MicVST
+
+- A console interface inspired by threshold-34: black surfaces, green/cyan accents, square panels, an integrated title bar and embedded JetBrains Mono Regular/Medium. Routing stays on the left; segmented input/output meters and effects stay on the right. The backdrop is static.
+- Mono channel 1, mono channel 2 or stereo input selection. Mono audio fans out to stereo destinations automatically; auxiliary sidechain buses are excluded from the voice route.
+- Cable discovery no longer switches the current audio device. Failed changes preserve the previous requested route and WASAPI mode. Hot-unplug keeps the selected device names instead of saving a fallback. Runtime driver errors reach the UI safely; old errors are discarded after a restart. Low-latency open failures retry the same endpoints in shared mode.
+- Missing or failed effects stay in their original positions with preset data preserved. Already cached effects can be used while scanning continues. The effect picker updates with the library and retains its search and selected VST3 class.
+- VST3 class identifiers are saved, including multiple effects inside the same bundle. Bundle/binary cache aliases no longer cause a scan on every launch.
+- Each VST3 instance owns a process for loading, DSP, state and its editor. Faulted instances retain settings and offer individual reload; healthy instances keep running. Workers are terminated when their host exits, including abnormal exits.
+- Row actions use stable effect identities and safe callbacks. A plugin has one editor window; closing it schedules a parameter snapshot. Plugins without a custom editor can use the generic parameter editor inside their worker.
+- Settings and the scan cache are written atomically. A valid previous settings file is kept as `config.xml.bak` and used if the main file is damaged.
+- Named chain presets with plugin parameter blobs, import/export, pinned startup choices, transactional chain loading and path-independent plugin restoration.
+- Cached/debounced parameter snapshots, coalesced background session writes, smooth mute/bypass, finite-sample protection and interrupted-session recovery with individual effect retry.
+- Meters follow window visibility, including first launch and returning from the tray, and stop refreshing when hidden. Startup registry reads happen once per second while visible, rather than every meter frame.
+- The fork has its own config folder, startup entry and update source. It imports an existing MicVST setup on first normal launch without changing the original files.
+
+## Build and test
+
+Requires Windows x64, CMake 3.22 or newer, and Visual Studio 2022 Build Tools with the C++ workload and Windows SDK. CMake fetches JUCE **8.0.13**.
 
 ```powershell
-$cmake = "C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe"
-
-# Configure (fetches JUCE)
-& $cmake -S . -B build -G "Visual Studio 17 2022" -A x64
-
-# Release build -> build\MicVST_artefacts\Release\MicVST.exe (self-contained, ~8 MB)
-& $cmake --build build --config Release --target MicVST
-
-# Optional: unit tests (exit code 0 = ok)
-& $cmake --build build --config Release --target MicVSTTests
-.\build\MicVSTTests_artefacts\Release\MicVSTTests.exe
+cmake -S . -B build -G "Visual Studio 17 2022" -A x64
+cmake --build build --config Release --target CrystalVoice MicVSTTests --parallel 6
+ctest --test-dir build -C Release --output-on-failure
 ```
 
-The build uses the static MSVC runtime (`/MT`), so the resulting `.exe` runs on any Windows 11 x64
-machine without the Visual C++ Redistributable (Windows 10 x64 should work too, but is untested).
+Portable binary: `build/CrystalVoice_artefacts/Release/CrystalVoice.exe`. The static MSVC runtime avoids a Visual C++ Redistributable dependency.
 
-## How it works
+Regression tests cover worker creation/DSP/state failures, native access violations, hung workers, stale audio rejection, independent state and reload, worker cleanup after host death, audio graph processing, scanning and cache invalidation, missing-plugin restoration, device restart/mode fallback and rollback, settings recovery, VST3 identity, row reordering and live picker interactions. Engine tests use in-memory devices with WASAPI disabled, so they do not open real audio endpoints. Windows CI runs the same Release build and tests; tag releases are published only after tests pass.
 
-- An **AudioProcessorGraph** wires the input device → your plugin chain → the output device,
-  driven by JUCE’s `AudioDeviceManager` (WASAPI shared mode).
-- Per hop, `min(source.outs, target.ins)` channels are connected, so variable channel width
-  (the mono→stereo transition) is routed correctly and automatically.
-- The output device is just a normal render endpoint - pointing it at a virtual cable’s *input*
-  endpoint lets the cable’s driver loop the audio to its *output* (capture) endpoint, which other
-  apps read as a microphone. No special “output plugin” needed.
+See [validation results and remaining manual checks](docs/validation.md) for the local hardware smoke test and resource measurements.
 
-## Latency
+### Isolated development profiles
 
-MicVST adds only the **smallest buffer necessary** to run your VST3 chain - typically one 10 ms block (480 samples at 48 kHz), the standard Windows shared-audio period. There's no extra buffering on top: audio comes in, goes through your plugins, and goes straight out.
+```powershell
+.\build\CrystalVoice_artefacts\Release\CrystalVoice.exe --profile C:\Temp\CrystalVoiceTest
+```
 
-A few things worth knowing:
+An explicit profile uses its own settings and disables startup changes. To render documentation from the application's own components without screen capture or desktop interaction, provide an existing disconnected profile:
 
-- **Buffer size**: in low-latency mode the device reports its supported sizes and a "Buffer" dropdown appears in the device panel ("Auto" = device default); otherwise Windows' shared engine period (typically 480 samples at 48 kHz = ~10 ms) is used directly. MicVST shows the buffer and live end-to-end latency under the device list.
-- **Total latency you hear is mostly downstream of MicVST.** The signal path is `Mic → MicVST → virtual cable → your app (Discord/OBS/…)`. The virtual cable and the receiving app each read through Windows shared audio too, and the cable has its own buffering. If you want to trim the cable's part, VB-Cable exposes a latency / internal-sample-rate setting in its own control panel (`VBCABLE_ControlPanel.exe`).
-- **For talking into Discord/OBS/Zoom, latency is inaudible** - your microphone signal travels one way to your listeners, so a few milliseconds never matter. (Low buffer sizes only matter when you monitor *yourself* live or play an instrument in real time, which isn't what MicVST is for.)
-- **ASIO / ASIO4All won't help here.** ASIO is built for a single exclusive in-and-out device and doesn't fit a mic-in / virtual-cable-out setup - and the receiving app would still read through shared audio anyway. MicVST is already on the most direct path Windows offers for this job.
+```powershell
+.\build\CrystalVoice_artefacts\Release\CrystalVoice.exe --profile C:\Temp\CrystalVoiceTest --render-preview C:\Temp\CrystalVoice.png
+```
 
-## Notes
+Icons are defined in `resources/crystal-voice.svg`. Regenerate the Windows application and tray PNGs with `tools/Generate-Icons.ps1`.
 
-- **rnnoise** (noise suppression) is available as a VST3 here:
-  <https://github.com/werman/noise-suppression-for-voice/releases> - drop the `.vst3` into
-  `C:\Program Files\Common Files\VST3\` and restart. It runs at **48 kHz**; for low CPU use the
-  mono variant and place it before the built-in Mono → Stereo node.
-- Third-party software (JUCE, your VST3 plugins, VB-Cable, …) is subject to its own licenses. This
-  repository contains only the MicVST source.
+## Settings and compatibility
+
+Normal settings live in `%APPDATA%\CrystalVoice`; the startup registry entry is `CrystalVoice`. On first launch, a valid `%APPDATA%\MicVST\config.xml` and plugin cache can be imported. The original MicVST installation and settings remain intact. Close the old host before running both hosts into the same virtual cable.
+
+Only **VST3 effects** are supported. Plugins and virtual cable drivers must be installed separately. The application is unsigned; releases include a SHA-256 checksum. Windows 11 x64 is the development platform; Windows 10 compatibility and manual device hotplug testing still need broader verification.
 
 ## License
 
-MicVST is free software licensed under the **GNU General Public License v3.0** - see
-[LICENSE](LICENSE). It uses **[JUCE](https://juce.com)**, whose free open-source tier is GPL, so
-MicVST is GPL too. Third-party software (JUCE, your VST3 plugins, VB-Cable, …) is subject to its own
-licenses; this repository contains only the MicVST source.
+GNU GPL v3.0; see [LICENSE](LICENSE). Original MicVST copyright (C) 2026 Philip Zimmermann. This fork retains the original attribution and license. JUCE, plugins and virtual cable software are subject to their own licenses.
 
-```
-Copyright (C) 2026 Philip Zimmermann
-This program is free software: you can redistribute it and/or modify it under the terms of the
-GNU General Public License as published by the Free Software Foundation, either version 3 of the
-License, or (at your option) any later version. It is distributed WITHOUT ANY WARRANTY; without
-even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-```
+The bundled [JetBrains Mono](https://github.com/JetBrains/JetBrainsMono) fonts use the [SIL Open Font License 1.1](resources/fonts/OFL.txt). See [font provenance](resources/fonts/README.md); the license is embedded and readable in Help.

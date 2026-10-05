@@ -1,4 +1,5 @@
 #include "ui/LevelMeterComponent.h"
+#include "ui/Theme.h"
 
 namespace
 {
@@ -9,43 +10,42 @@ namespace
 void LevelMeterComponent::paint (juce::Graphics& g)
 {
     auto b = getLocalBounds().toFloat();
-    g.setColour (juce::Colours::black);
+    g.setColour (theme::background);
     g.fillRect (b);
 
     auto dbX = [&] (float db) { return b.getX() + meterScale::dbToNorm (db) * b.getWidth(); };
 
-    // Dezente vertikale Gitterlinien an den Skalenmarken.
-    g.setColour (juce::Colours::white.withAlpha (0.12f));
-    for (int db : kTicks)
-        g.drawVerticalLine ((int) dbX ((float) db), b.getY(), b.getBottom());
-
-    // RMS-Balken von links.
-    const float rmsDb = juce::Decibels::gainToDecibels (level.rms, meterScale::minDb);
-    const float rmsX  = dbX (rmsDb);
-    if (rmsX > b.getX())
+    const float vuDb = juce::Decibels::gainToDecibels (level.vu, meterScale::minDb);
+    const float vuX  = dbX (vuDb);
+    constexpr int segments = 40;
+    const float pitch = b.getWidth() / segments;
+    for (int i = 0; i < segments; ++i)
     {
-        g.setColour (juce::Colours::limegreen);
-        g.fillRect (juce::Rectangle<float> (b.getX(), b.getY(), rmsX - b.getX(), b.getHeight()));
+        const float x = b.getX() + i * pitch;
+        const auto colour = i >= 38 ? theme::danger : i >= 34 ? theme::warning : theme::accent;
+        g.setColour (x < vuX ? colour : theme::raised);
+        g.fillRect (juce::Rectangle<float> (x + 1, b.getY() + 2, juce::jmax (1.0f, pitch - 2), b.getHeight() - 4));
     }
 
-    // Peak-Hold als vertikale gelbe Linie.
-    const float peakDb = juce::Decibels::gainToDecibels (level.peak, meterScale::minDb);
+    // Keep the VU maximum on the same scale as the bar. The max also protects against
+    // reading two adjacent audio callbacks while the atomics are being published.
+    const float peakDb = juce::Decibels::gainToDecibels (juce::jmax (level.vu, level.heldVu), meterScale::minDb);
     if (peakDb > meterScale::minDb)
     {
-        g.setColour (juce::Colours::yellow);
-        const float px = dbX (peakDb);
-        g.drawLine (px, b.getY(), px, b.getBottom(), 2.0f);
+        g.setColour (level.heldPeak >= 1.0f ? theme::danger : theme::warning);
+        const int px = juce::roundToInt (juce::jlimit (b.getX() + 1, juce::jmax (b.getX() + 1, b.getRight() - 3), dbX (peakDb) - 1));
+        g.fillRect (px, 1, 2, juce::jmax (0, getHeight() - 2));
     }
 
-    g.setColour (juce::Colours::white.withAlpha (0.25f));
-    g.drawRect (b, 1.0f);
+    g.setColour (theme::border);
+    g.drawRect (b.reduced (0.5f), 1.0f);
 }
 
 void DbScaleComponent::paint (juce::Graphics& g)
 {
     auto b = getLocalBounds().toFloat();
-    g.setColour (juce::Colours::lightgrey);
-    g.setFont (11.0f);
+    g.setColour (theme::muted);
+    g.setFont (theme::font (10));
 
     for (int db : kTicks)
     {
@@ -54,7 +54,8 @@ void DbScaleComponent::paint (juce::Graphics& g)
         auto just = db == kTicks[0] ? juce::Justification::centredLeft
                   : db == 0         ? juce::Justification::centredRight
                                     : juce::Justification::centred;
-        juce::Rectangle<float> r (x - 18.0f, b.getY(), 36.0f, b.getHeight());
+        juce::Rectangle<float> r (juce::jlimit (b.getX(), juce::jmax (b.getX(), b.getRight() - 32), x - 16),
+                                  b.getY(), 32, b.getHeight());
         g.drawText (juce::String (db), r, just);
     }
 }

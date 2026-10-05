@@ -1,16 +1,16 @@
-# Contributing to MicVST
+# Contributing to Crystal Voice
 
-Thanks for your interest! MicVST is a small, focused Windows tool - bug reports, ideas and
+Crystal Voice is a small, focused Windows tool - bug reports, ideas and
 pull requests are all welcome.
 
 ## Reporting bugs / requesting features
 
-Open an [issue](https://github.com/philipz794/MicVST/issues). For bugs, please include:
+Open an [issue](https://github.com/km4sh/crystal-voice/issues). For bugs, please include:
 
 - your Windows version,
 - which virtual cable you use (VB-Cable / VoiceMeeter / Virtual Audio Cable / …),
 - the plugins in your chain,
-- the relevant lines from the log: `%APPDATA%\MicVST\log.txt`.
+- the relevant lines from the log: `%APPDATA%\CrystalVoice\log.txt`.
 
 ## Building
 
@@ -23,10 +23,10 @@ CMake). JUCE is fetched automatically via CMake `FetchContent` - nothing else to
 cmake -S . -B build -G "Visual Studio 17 2022" -A x64
 
 # Build app + tests
-cmake --build build --config Release --target MicVST MicVSTTests
+cmake --build build --config Release --target CrystalVoice MicVSTTests --parallel 6
 
 # Run the unit tests (exit code 0 = ok)
-.\build\MicVSTTests_artefacts\Release\MicVSTTests.exe
+ctest --test-dir build -C Release --output-on-failure
 ```
 
 See the README for the full build/run details.
@@ -46,8 +46,10 @@ src/
   audio/   AudioEngine, PluginChain, GraphConnections, Metering, MicVSTDeviceManager
   state/   Persistence (config.xml), AutostartRegistry
   ui/      MainComponent, DevicePanel, PluginListView, LevelMeterComponent, TrayIcon
-tests/     TestMain.cpp (JUCE UnitTest: Metering, GraphConnections, Persistence)
-resources/ icon PNGs
+tests/     JUCE regression tests for routing, scanning, state and picker interactions
+resources/ icon SVG and generated PNGs
+tools/     icon regeneration script
+docs/      validation results and outstanding manual checks
 ```
 
 ## License

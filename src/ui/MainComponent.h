@@ -4,44 +4,43 @@
 #include "ui/LevelMeterComponent.h"
 #include "ui/PluginListView.h"
 #include "ui/DevicePanel.h"
+#include "ui/WorkspaceLayout.h"
 #include "state/AutostartRegistry.h"
 #include "net/UpdateChecker.h"
 
-class MainComponent : public juce::Component, private juce::Timer
+class MainComponent : public juce::Component, private juce::Timer, private juce::ComponentListener
 {
 public:
-    explicit MainComponent (AudioEngine& engine);
+    explicit MainComponent (AudioEngine&);
     ~MainComponent() override;
+    void paint (juce::Graphics&) override;
     void resized() override;
-
-    // Checkbox-Zustand setzen, ohne onUpdateCheckToggled auszulösen (Init). runIfOn=true ->
-    // bei aktivem Check sofort einen Lauf starten.
+    void visibilityChanged() override;
+    void parentHierarchyChanged() override;
     void setUpdateCheckEnabled (bool on, bool runIfOn);
-
-    std::function<void (bool)> onUpdateCheckToggled;   // User hat die Checkbox geklickt (App persistiert)
-    // Update gefunden: App entscheidet über die Tray-Bubble (Dedup per Version) + persistiert.
-    std::function<void (const juce::String& latestVersion, const juce::String& url)> onUpdateFound;
-
+    std::function<void (bool)> onUpdateCheckToggled;
+    std::function<void (const juce::String&, const juce::String&)> onUpdateFound;
 private:
     void timerCallback() override;
-    void updateCableHint();   // zeigt den VB-Cable-Hinweis, wenn kein virtuelles Kabel installiert ist
-    void showHowTo();         // öffnet das How-To-Fenster
-    void startUpdateCheck();  // einen Hintergrund-Check anstoßen
-    void showUpdateAvailable (const juce::String& latestVersion, const juce::String& url);
+    void componentVisibilityChanged (juce::Component&) override;
+    void refreshStatus();
+    void showHowTo();
+    void startUpdateCheck();
     AudioEngine& engine;
-    std::unique_ptr<DevicePanel> devicePanel;
+    DevicePanel devicePanel;
+    PluginListView pluginList;
     LevelMeterComponent inMeter, outMeter;
-    DbScaleComponent dbScale;
-    juce::Label inLabel { {}, "In" }, outLabel { {}, "Out" };
-    std::unique_ptr<PluginListView> pluginList;
-    juce::HyperlinkButton versionLink;   // klickbare Versionsnummer -> GitHub-Repo (zeigt auch "Update available!")
-    juce::String currentVersion;         // ohne "v", z. B. "1.0.2"
-    juce::ToggleButton updateToggle { "Auto-Update-Check" };   // Opt-in GitHub-Check beim Start
+    juce::Label inLabel { {}, "INPUT LEVEL" }, outLabel { {}, "OUTPUT LEVEL" };
+    juce::Label inReading, outReading, status, performance;
+    juce::TextButton muteButton { "[ MUTE MIC ]" }, howToButton { "[ HELP ]" };
+    juce::ToggleButton autostartToggle { "Start with Windows" }, updateToggle { "Check for updates" };
+    juce::HyperlinkButton versionLink;
+    juce::String currentVersion;
     UpdateChecker updateChecker;
-    juce::TextButton howToBtn { "How To" };
-    std::unique_ptr<juce::DocumentWindow> howToWindow;
-    juce::ToggleButton autostartToggle { "Run at startup" };
-    juce::HyperlinkButton cableHint { "No virtual audio cable found - click to install VB-Cable",
-                                      juce::URL ("https://vb-audio.com/Cable/") };
-    juce::TooltipWindow tooltipWindow { nullptr, 100 };   // Hover-Tooltips, fast instant (100 ms)
+    juce::TooltipWindow tooltip { nullptr, 450 };
+    std::unique_ptr<juce::DocumentWindow> helpWindow;
+    juce::Rectangle<int> inputMeterCard, outputMeterCard;
+    DbScaleComponent inScale, outScale;
+    juce::Component::SafePointer<juce::Component> observedWindow;
+    int readoutTicks = 0;
 };

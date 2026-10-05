@@ -2,27 +2,49 @@
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <atomic>
 
-struct LevelReading { float rms = 0.0f; float peak = 0.0f; };
+struct LevelReading
+{
+    float rms = 0.0f, peak = 0.0f; // Unsmoothed block measurements.
+    float vu = 0.0f, heldPeak = 0.0f; // Display envelope and independent sample-peak hold.
+    float heldVu = 0.0f; // Recent maximum of that same VU envelope, used by the marker.
+};
 
 // Reine Funktion: RMS/Peak über alle Kanäle eines Buffers. Testbar ohne Hardware.
 LevelReading computeLevel (const juce::AudioBuffer<float>& buffer);
 
-// Thread-sicherer Meter: process() im Audio-Thread, read() im GUI-Thread.
+// VU-style full-wave detector and second-order movement, independent of buffer/UI rate.
+// prepare/reset/process run on the audio lifecycle thread; read only loads atomics.
 class LevelMeter
 {
 public:
-    void process (const juce::AudioBuffer<float>& buffer)
-    {
-        const auto r = computeLevel (buffer);
-        rms_.store (r.rms,  std::memory_order_relaxed);
-        peak_.store (r.peak, std::memory_order_relaxed);
-    }
+    void prepare (double sampleRate);
+    void reset();
+    void process (const juce::AudioBuffer<float>& buffer);
     LevelReading read() const
     {
         return { rms_.load (std::memory_order_relaxed),
-                 peak_.load (std::memory_order_relaxed) };
+                 peak_.load (std::memory_order_relaxed),
+                 vu_.load (std::memory_order_relaxed),
+                 heldPeak_.load (std::memory_order_relaxed),
+                 heldVu_.load (std::memory_order_relaxed) };
     }
 private:
+    // Exact discrete-time solution of y'' + 2*zeta*omega*y' + omega^2*y = omega^2*abs(x).
+    // About 300 ms to 99% on a step, with a small 1.2% mechanical overshoot.
+    double position = 0.0, velocity = 0.0;
+    double positionCoefficient = 0.0, velocityToPosition = 0.0,
+        positionToVelocity = 0.0, velocityCoefficient = 0.0;
+    struct PeakHold
+    {
+        void prepare (double sampleRate, double holdSeconds, double releaseDbPerSecond);
+        void reset();
+        void process (double value);
+        double level = 0.0, release = 1.0;
+        int holdSamples = 1, remaining = 0;
+    };
+    PeakHold samplePeakHold, vuPeakHold;
+    bool prepared = false;
     std::atomic<float> rms_  { 0.0f };
     std::atomic<float> peak_ { 0.0f };
+    std::atomic<float> vu_ { 0.0f }, heldPeak_ { 0.0f }, heldVu_ { 0.0f };
 };
