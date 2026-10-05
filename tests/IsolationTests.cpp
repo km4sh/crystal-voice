@@ -155,6 +155,21 @@ struct IsolationTests : juce::UnitTest
         expect (startupDevice != nullptr);
         if (startupDevice != nullptr) expectEquals (startupDevice->render().getSample (0, 479), 0.0f);
 
+        beginTest ("automatic scan retry never relaunches a worker that failed startup state restore");
+        const auto onceMarker = juce::File::getSpecialLocation (juce::File::tempDirectory).getNonexistentChildFile ("CrystalVoiceStateCrashOnce", ".txt", false);
+        auto onceDesc = isolationTest::description ("set-crash-once:" + onceMarker.getFullPathName());
+        AudioEngine onceEngine (testAudio::devices()); onceEngine.getKnownPlugins().addType (onceDesc);
+        MicVSTState onceState; onceState.inputDevice = "Microphone A"; onceState.outputDevice = "CABLE Input"; onceState.bufferSize = 480;
+        PluginEntryState onceSaved; onceSaved.fileOrId = onceDesc.fileOrIdentifier; onceSaved.identifier = onceDesc.createIdentifierString(); onceSaved.state.replaceAll (&gain, 4);
+        onceState.plugins.add (onceSaved); onceEngine.applyState (onceState);
+        expect (onceMarker.existsAsFile()); expect (onceEngine.getChain().entries()[0].isUnavailable()); expect (onceEngine.isMuted());
+        const auto onceId = onceEngine.getChain().entries()[0].id;
+        onceEngine.retryMissingPlugins(); expect (onceEngine.getChain().entries()[0].isUnavailable());
+        expect (onceEngine.captureState (false).plugins[0].state == onceSaved.state);
+        onceEngine.retryMissingPlugins (true, onceId); expect (! onceEngine.getChain().entries()[0].isUnavailable());
+        expectEquals (onceEngine.getChain().entries()[0].id, onceId); expect (onceEngine.isMuted());
+        expect (onceEngine.captureState (false).plugins[0].state == onceSaved.state); onceMarker.deleteFile();
+
         beginTest ("a native access violation is contained in its worker");
         auto nativeCrash = IsolatedPlugin::create (isolationTest::description ("native-crash"), 48000, 480, error);
         expect (nativeCrash != nullptr, error);

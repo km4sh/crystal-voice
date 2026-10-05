@@ -41,6 +41,7 @@ public:
         juce::uint32 id = 0;
         juce::String format, classUid;
         std::shared_ptr<StateObserver> observer;
+        bool requiresManualRetry = false;
         bool isBuiltIn() const { return fileOrId.startsWith ("builtin:"); }
         bool isUnavailable() const { return node == NodeID{}; }
     };
@@ -64,7 +65,7 @@ public:
     // bzw. Stereo->Mono (2 in -> 1 out, gemittelt).
     void addMonoToStereo();
     void addStereoToMono();
-    void addUnavailable (const PluginEntryState&, const juce::String& error);
+    void addUnavailable (const PluginEntryState&, const juce::String& error, bool requiresManualRetry = false);
     int indexOf (juce::uint32 id) const;
 
     void removePlugin (int index);

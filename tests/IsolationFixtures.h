@@ -42,7 +42,13 @@ public:
         const float value = gain.load(); result.replaceAll (&value, sizeof (value));
     }
     void setStateInformation (const void* data, int bytes) override
-    { if (desc.fileOrIdentifier.contains ("set-crash")) std::_Exit (74);
+    {
+      if (desc.fileOrIdentifier.startsWith ("fixture:set-crash-once:"))
+      {
+          juce::File marker (desc.fileOrIdentifier.fromFirstOccurrenceOf ("fixture:set-crash-once:", false, false));
+          if (! marker.existsAsFile()) { marker.replaceWithText ("first state restore crashed"); std::_Exit (74); }
+      }
+      else if (desc.fileOrIdentifier.contains ("set-crash")) std::_Exit (74);
       if (bytes == 4) { float value; std::memcpy (&value, data, 4); gain = value; updateHostDisplay (juce::AudioProcessorListener::ChangeDetails{}.withNonParameterStateChanged (true)); } }
     bool acceptsMidi() const override { return false; }
     bool producesMidi() const override { return false; }

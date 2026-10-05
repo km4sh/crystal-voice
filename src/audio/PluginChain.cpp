@@ -182,7 +182,7 @@ void PluginChain::addStereoToMono()
     chain.back().id = nextId++;
 }
 
-void PluginChain::addUnavailable (const PluginEntryState& state, const juce::String& error)
+void PluginChain::addUnavailable (const PluginEntryState& state, const juce::String& error, bool requiresManualRetry)
 {
     Entry entry;
     entry.fileOrId = state.fileOrId;
@@ -193,6 +193,7 @@ void PluginChain::addUnavailable (const PluginEntryState& state, const juce::Str
     entry.savedState = state.state;
     entry.format = state.format; entry.manufacturer = state.manufacturer; entry.classUid = state.classUid;
     entry.error = error;
+    entry.requiresManualRetry = requiresManualRetry;
     entry.id = nextId++;
     chain.push_back (std::move (entry));
 }

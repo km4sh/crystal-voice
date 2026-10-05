@@ -4,10 +4,10 @@ Validated on 2026-10-06 with Windows 11 Pro x64 (build 26200), Visual Studio 202
 
 ## Automated checks
 
-Release application and test builds succeed. CTest reports **147 cases, 1336 assertions passed, 0 failed**. Coverage includes:
+Release application and test builds succeed. CTest reports **148 cases, 1346 assertions passed, 0 failed**. Coverage includes:
 
 - Actual per-instance child processes: duplicate classes with independent parameters/PIDs; creation, DSP and state process exits; a native access violation; hung DSP/state functions; other workers continuing during slow serialization; rejection of oversized blocks and discarded late output.
-- Individual worker reload retaining its stable slot, parameters and healthy workers; failed staged state restoration preserving the live chain; startup state failure retaining its blob and muting the microphone; hung-worker detection after audio submission stops; child cleanup when the host exits without running destructors.
+- Individual worker reload retaining its stable slot, parameters and healthy workers; failed staged state restoration preserving the live chain; startup state failure retaining its blob and muting the microphone; automatic scan retry leaving a startup-failed slot paused even when its next load would succeed, followed by explicit retry restoring it; hung-worker detection after audio submission stops; child cleanup when the host exits without running destructors.
 
 - Relocated legacy/new plugin identities, renamed effects and rejection of ambiguous installations or incorrect vendors.
 - Named preset parameter/order/bypass round trips, startup/session separation, modified-session persistence and atomic staged load failure preserving the live nodes and audio route.

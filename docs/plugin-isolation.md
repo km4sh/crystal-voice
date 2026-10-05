@@ -24,7 +24,7 @@ State operations lock only that child's processor callback lock. Its audio threa
 
 The editor lives in a separate child-owned native window, including JUCE's generic editor when needed. Opening it again raises the existing window. An editor fault therefore has the same process boundary as a DSP fault. Cross-process window embedding is intentionally avoided.
 
-Reload constructs a new worker and restores its cached parameters before replacing only the failed slot. The stable row ID, chain position and bypass flag remain intact; other workers are retained. A failed replacement leaves the original slot available for another retry. Automatic scan completion cannot restart failed workers. Preset loading stages all new instances and commits only after every state restore succeeds. Startup keeps output silent while restoring, and an unavailable active slot keeps the microphone muted for review.
+Reload constructs a new worker and restores its cached parameters before replacing only the failed slot. The stable row ID, chain position and bypass flag remain intact; other workers are retained. A failed replacement leaves the original slot available for another retry. Automatic scan completion cannot restart failed workers, including unavailable slots created by a startup load/state failure; these require explicit Retry. Preset loading stages all new instances and commits only after every state restore succeeds. Startup keeps output silent while restoring, and an unavailable active slot keeps the microphone muted for review.
 
 ## Limits
 

@@ -640,7 +640,7 @@ void AudioEngine::restoreChain (const juce::Array<PluginEntryState>& plugins)
         }
 
         if (recoveryMode)
-        { pluginChain->addUnavailable (p, "Safe start after an interrupted session. Review this effect, then use Library > Retry missing effects."); continue; }
+        { pluginChain->addUnavailable (p, "Safe start after an interrupted session. Review this effect, then use Retry.", true); continue; }
         auto type = resolvePlugin (p, knownPlugins);
         if (type == nullptr) { pluginChain->addUnavailable (p, "Not found. Rescan your plugin folders."); continue; }
         juce::String err;
@@ -664,7 +664,7 @@ void AudioEngine::restoreChain (const juce::Array<PluginEntryState>& plugins)
         if (err.isNotEmpty())
         {
             if ((int) pluginChain->entries().size() > previousSize) pluginChain->removePlugin (previousSize);
-            pluginChain->addUnavailable (p, err); juce::Logger::writeToLog ("Plugin-Load: " + err);
+            pluginChain->addUnavailable (p, err, true); juce::Logger::writeToLog ("Plugin-Load: " + err);
         }
     }
     rebuildGraph();
@@ -679,6 +679,7 @@ void AudioEngine::retryMissingPlugins (bool userInitiated, juce::uint32 onlyEntr
     {
         const auto old = pluginChain->entries()[(size_t) i];
         if (onlyEntry != 0 && old.id != onlyEntry) continue;
+        if (old.requiresManualRetry && ! userInitiated) continue;
         auto oldNode = graph.getNodeForId (old.node);
         auto* isolated = oldNode != nullptr ? dynamic_cast<IsolatedPlugin*> (oldNode->getProcessor()) : nullptr;
         if (! old.isUnavailable() && (! userInitiated || isolated == nullptr || ! isolated->failed())) continue;
