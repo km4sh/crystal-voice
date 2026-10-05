@@ -2,6 +2,8 @@
 #include "audio/AudioEngine.h"
 #include "state/Persistence.h"
 #include "state/AutostartRegistry.h"
+#include "state/Presets.h"
+#include "state/Recovery.h"
 #include "ui/MainComponent.h"
 #include "ui/TrayIcon.h"
 #include "ui/Theme.h"
@@ -36,7 +38,7 @@ static unsigned int findTypesWithSehGuard (juce::VST3PluginFormat& format,
 }
 #endif
 
-class CrystalVoiceApplication : public juce::JUCEApplication
+class CrystalVoiceApplication : public juce::JUCEApplication, private juce::AsyncUpdater, private juce::Timer
 {
 public:
     const juce::String getApplicationName() override    { return "Crystal Voice"; }
@@ -100,6 +102,7 @@ public:
         }
 
         const auto arguments = juce::JUCEApplicationBase::getCommandLineParameterArray();
+        if (arguments.contains ("--quit")) { quit(); return; }
         for (int i = 0; i + 1 < arguments.size(); ++i)
             if (arguments[i] == "--profile") setSettingsDirectory (juce::File (arguments[i + 1].unquoted()));
 
@@ -135,6 +138,17 @@ public:
         const bool firstRun = ! configFile().existsAsFile()
             && ! configFile().getSiblingFile ("config.xml.bak").existsAsFile();
         MicVSTState state = loadState();
+        juce::String startupError;
+        if (! restoreStartupPreset (state, PresetStore(), startupError))
+            juce::Logger::writeToLog ("Startup preset unavailable; restoring last session: " + startupError);
+        if (! renderPreview)
+        {
+            recovery = std::make_unique<RecoverySession>();
+            engine->setRecoveryMode (recovery->begin() || arguments.contains ("--safe-mode"));
+            if (! recovery->isTracked()) juce::Logger::writeToLog ("Recovery marker could not be written; interrupted-session detection is unavailable.");
+            writer = std::make_unique<SessionWriter>();
+            startTimer (1000);
+        }
 
         // Auto-Update-Check-Zustand übernehmen (Default: aus, nie gefragt).
         updateCheckEnabled  = state.updateCheckEnabled;
@@ -170,6 +184,9 @@ public:
 
         mainWindow = std::make_unique<MainWindow> ("Crystal Voice", *engine, state.windowState);
         mainWindow->setVisible (! silent);   // Autostart (--tray): unsichtbar, nur Tray
+        if (startupError.isNotEmpty() && ! renderPreview)
+            juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon, "Startup preset",
+                startupError + "\nThe last session has been restored.");
 
         // Developer snapshot: render this application's own components, with an
         // explicit isolated profile. No screen capture or desktop input is involved.
@@ -197,14 +214,14 @@ public:
 
         // Beim Verstecken: einmaligen Tray-Hinweis zeigen und die aktuelle Fenstergröße sichern
         // (X beendet nicht, daher hier persistieren, damit eine geänderte Größe nicht verloren geht).
-        mainWindow->onHide = [this] { maybeShowTrayHint(); persistState(); };
+        mainWindow->onHide = [this] { maybeShowTrayHint(); persistState (true); };
 
         // Erst JETZT (nach applyState) das Persistieren bei Geräte-Änderungen aktivieren,
         // damit In-/Output-Auswahl gemerkt wird — auch ohne sauberes Beenden (X versteckt nur).
-        engine->onDeviceChanged = [this] { persistState(); };
+        engine->onDeviceChanged = [this] { triggerAsyncUpdate(); };
         // UI-Änderungen (Plugin-Kette, Ordner) persistieren ebenfalls den Gesamtzustand —
         // ein direktes saveState(captureState()) in der UI würde windowState/Update-Check resetten.
-        engine->onStateChanged  = [this] { persistState(); };
+        engine->onStateChanged  = [this] { triggerAsyncUpdate(); };
 
         // --- Auto-Update-Check verdrahten ---
         if (auto* mc = mainWindow->getContent())
@@ -234,22 +251,37 @@ public:
         if (! updateCheckAsked) { updateCheckAsked = true; persistState(); }
     }
 
-    void anotherInstanceStarted (const juce::String&) override
+    void anotherInstanceStarted (const juce::String& commandLine) override
     {
+        if (juce::StringArray::fromTokens (commandLine, true).contains ("--quit"))
+        { systemRequestedQuit(); return; }
         if (mainWindow != nullptr) { mainWindow->setVisible (true); mainWindow->toFront (true); }
     }
 
     void systemRequestedQuit() override
     {
-        persistState();
+        cancelPendingUpdate();
+        if (! persistState (true)) return;
+        if (writer != nullptr) writer->flush();
+        if (writer != nullptr)
+        {
+            const auto error = writer->takeError();
+            if (error.isNotEmpty())
+            { juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon, "Session save", error + "\nCrystal Voice is still running. Retry Quit after resolving the problem."); return; }
+        }
+        cleanQuit = true;
         quit();
     }
 
     void shutdown() override
     {
+        stopTimer(); cancelPendingUpdate();
         tray = nullptr;
         mainWindow = nullptr;
         engine = nullptr;
+        writer = nullptr;
+        if (cleanQuit && recovery != nullptr) recovery->markClean();
+        recovery = nullptr;
         juce::Logger::setCurrentLogger (nullptr);
         logger = nullptr;
         juce::LookAndFeel::setDefaultLookAndFeel (nullptr);
@@ -257,15 +289,29 @@ public:
 
 private:
     // Engine-Zustand (Geräte/Plugins) + Fenstergröße/-position + Update-Check-Zustand speichern.
-    void persistState()
+    void handleAsyncUpdate() override { persistState(); }
+    void timerCallback() override
     {
-        if (engine == nullptr) return;
-        auto s = engine->captureState();
+        if (writer == nullptr) return;
+        const auto error = writer->takeError();
+        if (error.isNotEmpty()) juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon, "Session save", error);
+    }
+    bool persistState (bool refreshParameters = false)
+    {
+        if (engine == nullptr) return true;
+        if (refreshParameters && ! engine->snapshotPluginStates (true))
+        {
+            juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon, "Session save", "Could not capture the latest plugin parameters. Crystal Voice is still running; try again.");
+            return false;
+        }
+        auto s = engine->captureState (false);
         if (mainWindow != nullptr) s.windowState = mainWindow->getWindowStateAsString();
         s.updateCheckEnabled  = updateCheckEnabled;
         s.updateCheckAsked    = updateCheckAsked;
         s.lastNotifiedVersion = lastNotifiedVersion;
-        saveState (s);
+        if (writer != nullptr) writer->enqueue (std::move (s));
+        else saveState (s);
+        return true;
     }
 
     void toggleWindow()
@@ -322,6 +368,9 @@ private:
     std::unique_ptr<AudioEngine> engine;
     std::unique_ptr<MainWindow> mainWindow;
     std::unique_ptr<TrayIcon> tray;
+    std::unique_ptr<SessionWriter> writer;
+    std::unique_ptr<RecoverySession> recovery;
+    bool cleanQuit = false;
 
     // Auto-Update-Check-Zustand (in config.xml persistiert, siehe persistState()).
     bool updateCheckEnabled = false;

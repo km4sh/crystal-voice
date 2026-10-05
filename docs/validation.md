@@ -1,10 +1,17 @@
 # Crystal Voice 1.2.0 validation
 
-Validated on 2026-10-04 with Windows 11 Pro x64 (build 26200), Visual Studio 2022 Build Tools and JUCE 8.0.13.
+Validated on 2026-10-06 with Windows 11 Pro x64 (build 26200), Visual Studio 2022 Build Tools and JUCE 8.0.13. Earlier measurements below retain their original scope.
 
 ## Automated checks
 
-Release application and test builds succeed. CTest reports **114 cases, 1106 assertions passed, 0 failed**. Coverage includes:
+Release application and test builds succeed. CTest reports **132 cases, 1222 assertions passed, 0 failed**. Coverage includes:
+
+- Relocated legacy/new plugin identities, renamed effects and rejection of ambiguous installations or incorrect vendors.
+- Named preset parameter/order/bypass round trips, startup/session separation, modified-session persistence and atomic staged load failure preserving the live nodes and audio route.
+- Corrupt/truncated/oversized state rejection, cached settings snapshots and restoration of a hosted test plugin's internal gain parameter.
+- Audio callbacks continuing during slow state serialization without concurrent plugin DSP/state access; background session flushes retaining the newest state and surfacing disk failures.
+- Interrupted-session markers, retained parameters, muted recovery and individual retry preventing automatic restoration of other paused effects.
+- Non-finite meter recovery, finite output guards, full-scale bounds, 5 ms gain ramps and latency-aligned dry bypass.
 
 - Actual audio graph processing, including mono fan-out, converter bypass, missing effects and stereo averaging.
 - Plugin scanning, timeouts, crash recovery, bundle/binary cache invalidation and forced retry.
@@ -34,7 +41,17 @@ Detection runs over every audio sample with coefficients prepared at the device'
 
 Rendering the same disconnected profile before and after this change produces an identical PNG SHA-256 (`c1f20b00232042ad468ccb01b0cd3f37939f01b2e064afdd0c3b59ca61324758`), confirming the static styling/layout is unchanged.
 
-## Current interface smoke test
+## Core upgrade smoke test, 2026-10-06
+
+The Release host was run with an isolated profile containing the older RNNoise → mono-to-stereo → TDR Nova configuration and its original plugin state blobs. Both old absolute installation paths were absent. The current cache resolved RNNoise and TDR Nova from `Program Files/Common Files/VST3`; all three stages loaded with the MiniFuse 2 → CABLE route at 48 kHz / 480 samples.
+
+The native PRESETS menu saved a named `Voice chain` preset and pinned it for startup. The RNNoise editor showed its restored VAD threshold at 0.85. Changing it to 0.50 updated the current session while the saved preset stayed at 0.85; the unchanged Nova state remained identical. After deliberately terminating this isolated test process, restart displayed SAFE START with both third-party effects unavailable and the microphone muted. Explicit retry restored the effects while keeping mute enabled. RNNoise's editor again displayed 0.85, and both parameter blobs matched the pinned preset. `--quit` cleanly saved/exited, closed the open editor and removed the running marker.
+
+The user's normal profile was backed up before testing. It retains its original MiniFuse/CABLE routing and empty effect chain; test presets and parameter edits are confined to the isolated profile. This is a live UI/recovery check, not a sustained-speech quality measurement or a full plugin fault-isolation test.
+
+State serialization deliberately quiesces plugin processing while callbacks continue and output fades to silence/back. It does not provide continuous wet audio during a slow snapshot. Snapshot and plugin creation/state functions still execute in the host; native faults or a stuck state function can terminate/stall it. Safe startup prevents automatically repeating the load after an interrupted session. Master bypass retains plugin processing to keep its state warm; its dry delay compensation is capped at one second.
+
+## Earlier interface smoke test, 2026-10-04
 
 The Release executable was launched with a separate development profile after the user authorized desktop testing. Its console design follows threshold-34's square panels, green/cyan accents and terminal labels. JetBrains Mono Regular and Medium are embedded along with their OFL license, so a system font installation is unnecessary. The background grid is static.
 

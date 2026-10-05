@@ -1,5 +1,6 @@
 #include "audio/AudioEngine.h"
 #include "audio/PluginLocations.h"
+#include "audio/PluginIdentity.h"
 using IOProc = juce::AudioProcessorGraph::AudioGraphIOProcessor;
 
 namespace
@@ -25,10 +26,12 @@ AudioEngine::AudioEngine (MicVSTDeviceManager::DeviceTypesFactory factory)
     // setCurrentAudioDeviceType()/setAudioDeviceSetup() sowie die Device-Suche tun nichts.
     deviceManager.getAvailableDeviceTypes();
     deviceManager.addChangeListener (this);
+    startTimer (250);
 }
 
 AudioEngine::~AudioEngine()
 {
+    stopTimer();
     *alive = false;
     scanner.reset();
     deviceManager.removeChangeListener (this);
@@ -159,6 +162,7 @@ juce::String AudioEngine::initialise (const juce::String& inputDeviceName,
     else
         juce::Logger::writeToLog ("Setup: kein Device offen (" + err + ")");
 
+    pluginChain.reset();
     graph.clear();
     auto inNode  = graph.addNode (std::make_unique<IOProc> (IOProc::audioInputNode));
     auto outNode = graph.addNode (std::make_unique<IOProc> (IOProc::audioOutputNode));
@@ -432,8 +436,39 @@ void AudioEngine::removePluginFolder (const juce::String& folder)
     startBackgroundScan();
 }
 
-MicVSTState AudioEngine::captureState()
+bool AudioEngine::snapshotPluginStates (bool force)
 {
+    if (pluginChain == nullptr || (! force && ! pluginChain->hasDirtyStates())) return true;
+    if (std::none_of (pluginChain->entries().begin(), pluginChain->entries().end(),
+                      [] (const PluginChain::Entry& entry) { return entry.observer != nullptr; })) return true;
+    // Sequentially consistent gate: readers that saw false are counted before
+    // the message thread starts serialization. New callbacks never wait on a lock.
+    takingSnapshot.store (true);
+    struct Release { std::atomic<bool>& flag; ~Release() { flag.store (false); } } release { takingSnapshot };
+    const auto deadline = juce::Time::getMillisecondCounterHiRes() + 100.0;
+    while (audioReaders.load() != 0)
+    {
+        if (juce::Time::getMillisecondCounterHiRes() > deadline) return false;
+        juce::Thread::sleep (1);
+    }
+    try { pluginChain->captureStates (force); }
+    catch (...) { return false; }
+    return true;
+}
+
+void AudioEngine::timerCallback()
+{
+    if (pluginChain == nullptr) return;
+    const auto revision = pluginChain->stateRevision();
+    const double now = juce::Time::getMillisecondCounterHiRes();
+    if (revision != observedRevision)
+    { observedRevision = revision; lastParameterChange = now; presetModified = true; }
+    if (pluginChain->hasDirtyStates() && now - lastParameterChange >= 1000.0 && snapshotPluginStates()) requestPersist();
+}
+
+MicVSTState AudioEngine::captureState (bool refreshParameters)
+{
+    if (refreshParameters) snapshotPluginStates (true);
     MicVSTState s;
     juce::AudioDeviceManager::AudioDeviceSetup setup;
     setup = requestedSetup;
@@ -444,6 +479,8 @@ MicVSTState AudioEngine::captureState()
     s.inputChannel = inputChannel;
     s.muted = muted.load(); s.bypassed = masterBypass.load();
     s.pluginFolders = pluginFolders;
+    s.currentPreset = currentPreset; s.startupPreset = startupPreset;
+    s.presetModified = presetModified;
 
     // Unavailable entries retain their original blobs and position in the chain.
     if (pluginChain == nullptr) return s;
@@ -455,27 +492,86 @@ MicVSTState AudioEngine::captureState()
         p.identifier = e.identifier;
         p.displayName = e.displayName;
         p.bypassed = e.bypassed;
+        p.format = e.format; p.manufacturer = e.manufacturer; p.classUid = e.classUid;
         if (e.isUnavailable()) p.state = e.savedState;
-        if (auto* node = graph.getNodeForId (e.node))
-        {
-            auto* proc = node->getProcessor();
-            const juce::ScopedLock sl (proc->getCallbackLock());   // gegen Race mit processBlock
-            proc->getStateInformation (p.state);
-        }
+        else if (e.observer != nullptr) p.state = e.observer->cached;
         s.plugins.add (p);
     }
     return s;
+}
+
+bool AudioEngine::savePreset (const juce::String& name, bool asNew, juce::String& error)
+{
+    if (! snapshotPluginStates (true)) { error = "Audio is busy. Try saving again."; return false; }
+    ChainPreset preset;
+    preset.name = name; preset.id = asNew ? juce::String() : currentPreset;
+    preset.plugins = captureState (false).plugins;
+    if (! PresetStore().save (preset, error)) return false;
+    currentPreset = preset.id; currentPresetName = preset.name;
+    presetModified = false; observedRevision = pluginChain->stateRevision();
+    if (startupPreset == currentPreset) startupPresetName = preset.name;
+    requestPersist(); return true;
+}
+
+bool AudioEngine::setStartupPreset (const juce::String& id, juce::String& error)
+{
+    ChainPreset preset;
+    if (id.isNotEmpty() && ! PresetStore().load (id, preset, error)) return false;
+    startupPreset = id; startupPresetName = id.isNotEmpty() ? preset.name : juce::String();
+    error.clear(); requestPersist(); return true;
+}
+
+bool AudioEngine::loadPreset (const ChainPreset& preset, juce::String& error)
+{
+    if (pluginChain == nullptr) { error = "The audio engine is not ready."; return false; }
+    auto staged = std::make_unique<PluginChain> (graph, pluginChain->input(), pluginChain->output());
+    auto* device = deviceManager.getCurrentAudioDevice();
+    const double rate = device != nullptr ? device->getCurrentSampleRate() : requestedSetup.sampleRate;
+    const int block = device != nullptr ? device->getCurrentBufferSizeSamples() : 480;
+    try
+    {
+        for (const auto& saved : preset.plugins)
+        {
+            if (saved.fileOrId == PluginChain::monoToStereoId) staged->addMonoToStereo();
+            else if (saved.fileOrId == PluginChain::stereoToMonoId) staged->addStereoToMono();
+            else
+            {
+                auto type = resolvePlugin (saved, knownPlugins);
+                if (type == nullptr || ! staged->addPlugin (formatManager, *type, rate, block, error))
+                { error = "Could not load " + saved.displayName + ". " + (type == nullptr ? "Plugin missing or ambiguous." : error); return false; }
+                const auto& entry = staged->entries().back();
+                auto* processor = graph.getNodeForId (entry.node)->getProcessor();
+                if (saved.state.getSize() > 0) processor->setStateInformation (saved.state.getData(), (int) saved.state.getSize());
+                if (saved.state.getSize() > 0) entry.observer->acceptState (saved.state);
+            }
+            staged->setBypass ((int) staged->entries().size() - 1, saved.bypassed);
+        }
+    }
+    catch (const std::exception& exception) { error = "Plugin load failed: " + juce::String (exception.what()); return false; }
+    catch (...) { error = "Plugin load failed."; return false; }
+    if (onChainReplacing) onChainReplacing();
+    pluginChain = std::move (staged);
+    rebuildGraph();
+    currentPreset = preset.id; currentPresetName = preset.name; presetModified = false;
+    observedRevision = pluginChain->stateRevision(); recoveryMode = false;
+    error.clear(); requestPersist(); if (onStatusChanged) onStatusChanged(); return true;
 }
 
 void AudioEngine::applyState (const MicVSTState& s)
 {
     setPreferredBufferSize (s.bufferSize);
     inputChannel = s.inputChannel;
-    muted.store (s.muted); masterBypass.store (s.bypassed);
+    muted.store (s.muted || recoveryMode); masterBypass.store (s.bypassed);
+    currentPreset = s.currentPreset; startupPreset = s.startupPreset;
+    presetModified = s.presetModified;
+    ChainPreset preset; juce::String error; PresetStore store;
+    if (store.load (currentPreset, preset, error)) currentPresetName = preset.name;
+    if (store.load (startupPreset, preset, error)) startupPresetName = preset.name;
     initialise (s.inputDevice, s.outputDevice, s.sampleRate);
 
     // Restore available effects immediately; keep placeholders for missing ones.
     restoreChain (s.plugins);
+    observedRevision = pluginChain->stateRevision();
     rebuildGraph();
 }
 
@@ -494,8 +590,9 @@ void AudioEngine::restoreChain (const juce::Array<PluginEntryState>& plugins)
             continue;
         }
 
-        auto type = p.identifier.isNotEmpty() ? knownPlugins.getTypeForIdentifierString (p.identifier)
-                                             : knownPlugins.getTypeForFile (p.fileOrId);
+        if (recoveryMode)
+        { pluginChain->addUnavailable (p, "Safe start after an interrupted session. Review this effect, then use Library > Retry missing effects."); continue; }
+        auto type = resolvePlugin (p, knownPlugins);
         if (type == nullptr) { pluginChain->addUnavailable (p, "Not found. Rescan your plugin folders."); continue; }
         juce::String err;
         auto* device = deviceManager.getCurrentAudioDevice();
@@ -506,7 +603,9 @@ void AudioEngine::restoreChain (const juce::Array<PluginEntryState>& plugins)
             if (auto* node = graph.getNodeForId (pluginChain->entries()[(size_t) idx].node))
             {
                 const juce::ScopedLock lock (node->getProcessor()->getCallbackLock());
-                node->getProcessor()->setStateInformation (p.state.getData(), (int) p.state.getSize());
+                if (p.state.getSize() > 0) node->getProcessor()->setStateInformation (p.state.getData(), (int) p.state.getSize());
+                if (p.state.getSize() > 0 && pluginChain->entries()[(size_t) idx].observer != nullptr)
+                    pluginChain->entries()[(size_t) idx].observer->acceptState (p.state);
             }
             pluginChain->setBypass (idx, p.bypassed);
         }
@@ -515,16 +614,20 @@ void AudioEngine::restoreChain (const juce::Array<PluginEntryState>& plugins)
     rebuildGraph();
 }
 
-void AudioEngine::retryMissingPlugins()
+void AudioEngine::retryMissingPlugins (bool userInitiated, juce::uint32 onlyEntry)
 {
+    if (recoveryMode && ! userInitiated) return;
     if (pluginChain == nullptr) return;
     bool restored = false;
     for (int i = 0; i < (int) pluginChain->entries().size(); ++i)
     {
         const auto old = pluginChain->entries()[(size_t) i];
+        if (onlyEntry != 0 && old.id != onlyEntry) continue;
         if (! old.isUnavailable()) continue;
-        auto type = old.identifier.isNotEmpty() ? knownPlugins.getTypeForIdentifierString (old.identifier)
-                                               : knownPlugins.getTypeForFile (old.fileOrId);
+        PluginEntryState saved;
+        saved.fileOrId = old.fileOrId; saved.identifier = old.identifier; saved.displayName = old.displayName;
+        saved.format = old.format; saved.manufacturer = old.manufacturer; saved.classUid = old.classUid;
+        auto type = resolvePlugin (saved, knownPlugins);
         if (type == nullptr) continue;
         auto* device = deviceManager.getCurrentAudioDevice();
         juce::String error;
@@ -536,12 +639,18 @@ void AudioEngine::retryMissingPlugins()
         if (node != nullptr && old.savedState.getSize() > 0)
         { const juce::ScopedLock lock (node->getProcessor()->getCallbackLock());
           node->getProcessor()->setStateInformation (old.savedState.getData(), (int) old.savedState.getSize()); }
+        if (node != nullptr && old.savedState.getSize() > 0 && pluginChain->entries()[(size_t) last].observer != nullptr)
+            pluginChain->entries()[(size_t) last].observer->acceptState (old.savedState);
         pluginChain->setBypass (last, old.bypassed);
         pluginChain->removePlugin (i);
         pluginChain->movePlugin (last - 1, i);
         restored = true;
     }
+    if (recoveryMode && userInitiated)
+        recoveryMode = std::any_of (pluginChain->entries().begin(), pluginChain->entries().end(),
+                                   [] (const PluginChain::Entry& entry) { return entry.isUnavailable(); });
     if (restored) { rebuildGraph(); requestPersist(); }
+    if (userInitiated && onStatusChanged) onStatusChanged();
 }
 
 void AudioEngine::audioDeviceAboutToStart (juce::AudioIODevice* device)
@@ -559,6 +668,10 @@ void AudioEngine::audioDeviceAboutToStart (juce::AudioIODevice* device)
     playHead.samples.store (0);
     inputMeter.prepare (device->getCurrentSampleRate());
     outputMeter.prepare (device->getCurrentSampleRate());
+    outputSafety.prepare (device->getCurrentSampleRate(), device->getActiveOutputChannels().countNumberOfSetBits(), muted.load(), masterBypass.load());
+    cleanInput.setSize (juce::jmax (1, device->getActiveInputChannels().countNumberOfSetBits()),
+                        juce::jmax (4096, device->getCurrentBufferSizeSamples() * 2));
+    cleanInput.clear();
     player.audioDeviceAboutToStart (device);
 }
 
@@ -575,36 +688,60 @@ void AudioEngine::audioDeviceIOCallbackWithContext (const float* const* inputCha
                                                     int numSamples,
                                                     const juce::AudioIODeviceCallbackContext& context)
 {
+    audioReaders.fetch_add (1);
+    const juce::ScopedNoDenormals noDenormals;
+    struct ReaderRelease { std::atomic<int>& count; ~ReaderRelease() { count.fetch_sub (1); } } reader { audioReaders };
+    const auto started = juce::Time::getHighResolutionTicks();
+    const bool snapshot = takingSnapshot.load();
     playHead.samples.fetch_add (numSamples, std::memory_order_relaxed);   // Transport voranschieben
+
+    if (numSamples > cleanInput.getNumSamples() || numInputChannels > cleanInput.getNumChannels())
+    {
+        for (int ch = 0; ch < numOutputChannels; ++ch)
+            if (outputChannelData[ch] != nullptr) juce::FloatVectorOperations::clear (outputChannelData[ch], numSamples);
+        ++overruns; return; // Unexpected driver block: do not allocate on the audio thread.
+    }
+    for (int ch = 0; ch < numInputChannels; ++ch)
+    {
+        auto* target = cleanInput.getWritePointer (ch);
+        for (int sample = 0; sample < numSamples; ++sample)
+        {
+            const float value = inputChannelData[ch] != nullptr ? inputChannelData[ch][sample] : 0.0f;
+            target[sample] = std::isfinite (value) ? value : 0.0f;
+            if (! std::isfinite (value)) ++invalidSamples;
+        }
+    }
+    const auto* const* inputs = cleanInput.getArrayOfReadPointers();
 
     if (numInputChannels > 0)
     {
-        juce::AudioBuffer<float> inView (const_cast<float* const*> (inputChannelData),
+        juce::AudioBuffer<float> inView (const_cast<float* const*> (inputs),
                                          numInputChannels, numSamples);
         inputMeter.process (inView);
     }
 
     // Graph verarbeiten (Input -> Kette -> Output).
-    if (masterBypass.load (std::memory_order_relaxed))
+    if (snapshot)
     {
         for (int channel = 0; channel < numOutputChannels; ++channel)
         {
-            const auto* source = numInputChannels > 0 ? inputChannelData[channel % numInputChannels] : nullptr;
             if (outputChannelData[channel] == nullptr) continue;
-            if (source != nullptr) juce::FloatVectorOperations::copy (outputChannelData[channel], source, numSamples);
-            else juce::FloatVectorOperations::clear (outputChannelData[channel], numSamples);
+            juce::FloatVectorOperations::clear (outputChannelData[channel], numSamples);
         }
     }
-    else player.audioDeviceIOCallbackWithContext (inputChannelData, numInputChannels,
+    else player.audioDeviceIOCallbackWithContext (inputs, numInputChannels,
                                              outputChannelData, numOutputChannels,
                                              numSamples, context);
-    if (muted.load (std::memory_order_relaxed))
-        for (int channel = 0; channel < numOutputChannels; ++channel)
-            if (outputChannelData[channel] != nullptr) juce::FloatVectorOperations::clear (outputChannelData[channel], numSamples);
+    const auto counts = outputSafety.process (outputChannelData, numOutputChannels, inputs, numInputChannels, numSamples,
+        muted.load (std::memory_order_relaxed), masterBypass.load (std::memory_order_relaxed), snapshot, graph.getLatencySamples());
+    invalidSamples.fetch_add (counts.invalid, std::memory_order_relaxed);
+    clippedSamples.fetch_add (counts.clipped, std::memory_order_relaxed);
 
     if (numOutputChannels > 0)
     {
         juce::AudioBuffer<float> outView (outputChannelData, numOutputChannels, numSamples);
         outputMeter.process (outView);
     }
+    const double elapsed = juce::Time::highResolutionTicksToSeconds (juce::Time::getHighResolutionTicks() - started);
+    if (elapsed > numSamples / playHead.sampleRate.load()) ++overruns;
 }

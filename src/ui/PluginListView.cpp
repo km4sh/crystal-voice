@@ -157,6 +157,9 @@ PluginListView::PluginListView (AudioEngine& e) : engine (e)
     theme::primary (addButton);
     addButton.onClick = [this] { showPluginPicker(); };
     foldersButton.onClick = [this] { showFolderMenu(); };
+    presetsButton.onClick = [this] { showPresetMenu(); };
+    presetsButton.setColour (juce::TextButton::textColourOffId, theme::cyan);
+    engine.onChainReplacing = [this] { cancelDrag (false); editors.clear(); };
     foldersButton.setColour (juce::TextButton::textColourOffId, theme::cyan);
     bypassButton.setClickingTogglesState (true);
     bypassButton.setTooltip ("Compare with your dry microphone. Mute still applies.");
@@ -166,7 +169,7 @@ PluginListView::PluginListView (AudioEngine& e) : engine (e)
     refreshProcessingState();
     foldersButton.setTooltip ("Plugin folders, scanning and recovery");
     for (auto* component : std::initializer_list<juce::Component*> {
-        &addButton, &foldersButton, &bypassButton, &viewport, &scanLabel, &scanBar, &skipScanButton, &noticeLabel }) addAndMakeVisible (component);
+        &addButton, &foldersButton, &presetsButton, &bypassButton, &viewport, &scanLabel, &scanBar, &skipScanButton, &noticeLabel }) addAndMakeVisible (component);
     viewport.setViewedComponent (&rowsHolder, false); viewport.setScrollBarsShown (true, false);
     viewport.setComponentID ("effect-viewport"); rowsHolder.setComponentID ("effect-rows");
     viewport.setScrollBarThickness (8);
@@ -186,6 +189,7 @@ PluginListView::PluginListView (AudioEngine& e) : engine (e)
 PluginListView::~PluginListView()
 {
     stopTimer(); engine.onScanProgress = nullptr; engine.onScanFinished = nullptr;
+    engine.onChainReplacing = nullptr;
     rowAnimator.cancelAllAnimations (false);
     pickerWindow.reset(); editors.clear();
 }
@@ -196,7 +200,14 @@ void PluginListView::timerCallback()
         if (! isShowing()) { cancelDrag (false); return; }
         if (viewport.autoScroll (viewport.getWidth() / 2, dragPointerY, 28, 10)) updateDragPosition();
     }
-    else if (isShowing()) for (auto* row : rows) row->repaint();
+    else if (isShowing())
+    {
+        for (auto* row : rows) row->repaint();
+        presetsButton.setTooltip ("Current: " + (engine.getCurrentPresetName().isEmpty() ? juce::String ("Unsaved chain") : engine.getCurrentPresetName())
+            + (engine.isPresetModified() ? " (modified)" : "") + "\nStartup: "
+            + (engine.getStartupPresetName().isEmpty() ? juce::String ("Last session") : engine.getStartupPresetName()));
+        repaint (14, 34, getWidth() - 28, 20);
+    }
 }
 void PluginListView::refreshProcessingState()
 {
@@ -210,7 +221,10 @@ void PluginListView::paint (juce::Graphics& g)
     g.setColour (theme::text); g.setFont (theme::font (16, true));
     g.drawText ("[ EFFECT CHAIN ]", 14, 8, 240, 26, juce::Justification::centredLeft);
     g.setColour (theme::muted); g.setFont (theme::font (12));
-    g.drawText (juce::String (rows.size()).paddedLeft ('0', 2) + " STAGES // TOP TO BOTTOM",
+    const auto presetName = engine.getCurrentPresetName();
+    g.drawText (juce::String (rows.size()).paddedLeft ('0', 2) + " STAGES // "
+                + (presetName.isEmpty() ? juce::String ("TOP TO BOTTOM") : presetName + (engine.isPresetModified() ? " *" : ""))
+                + (engine.getStartupPresetName().isNotEmpty() ? " // STARTUP: " + engine.getStartupPresetName() : juce::String()),
                 14, 34, getWidth() - 28, 20, juce::Justification::centredLeft);
     if (rows.isEmpty())
     {
@@ -232,6 +246,7 @@ void PluginListView::resized()
     auto toolbar = r.removeFromTop (32);
     addButton.setBounds (toolbar.removeFromLeft (114)); toolbar.removeFromLeft (8);
     foldersButton.setBounds (toolbar.removeFromLeft (116));
+    toolbar.removeFromLeft (8); presetsButton.setBounds (toolbar.removeFromLeft (116));
     bypassButton.setBounds (toolbar.removeFromRight (126)); r.removeFromTop (12);
     if (scanLabel.isVisible())
     {
@@ -278,7 +293,7 @@ void PluginListView::rebuildRows()
     { auto* row = new Row (*this, i); rowsHolder.addAndMakeVisible (row); rows.add (row); }
     resized(); viewport.setViewPosition (0, y); repaint();
 }
-void PluginListView::commitChange() { engine.rebuildGraph(); engine.requestPersist(); rebuildRows(); }
+void PluginListView::commitChange() { engine.markPresetModified(); engine.rebuildGraph(); engine.requestPersist(); rebuildRows(); }
 
 void PluginListView::requestRemove (juce::uint32 id)
 {
@@ -309,7 +324,7 @@ void PluginListView::requestMove (juce::uint32 id, int destination)
             if (source != target)
             {
                 self->engine.getChain().movePlugin (source, target);
-                self->engine.rebuildGraph(); self->engine.requestPersist();
+                self->engine.markPresetModified(); self->engine.rebuildGraph(); self->engine.requestPersist();
                 for (int i = 0; i < self->rows.size(); ++i)
                     if (self->rows[i]->id == id) { self->rows.move (i, target); break; }
             }
@@ -427,7 +442,7 @@ void PluginListView::showFolderMenu()
         if (result == 1) self->chooseFolder();
         else if (result == 2) self->engine.rescanAllPlugins();
         else if (result == 3) self->engine.retrySkippedPlugins();
-        else if (result == 4) { self->engine.retryMissingPlugins(); self->commitChange(); }
+        else if (result == 4) { self->engine.retryMissingPlugins (true); self->commitChange(); }
         else if (juce::isPositiveAndBelow (result - 1000, folders.size()))
         { self->engine.removePluginFolder (folders[result - 1000]); self->engine.requestPersist(); }
         self->refreshPluginPicker(); self->updateScanUi();
@@ -444,11 +459,102 @@ void PluginListView::chooseFolder()
           { self->engine.addPluginFolder (result.getResult().getFullPathName()); self->engine.requestPersist(); } });
 }
 
+void PluginListView::reportPresetError (const juce::String& error)
+{
+    juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon, "Chain preset", error);
+}
+
+void PluginListView::namePreset()
+{
+    auto* dialog = new juce::AlertWindow ("Save chain preset", "Name this effect chain. Plugin parameters are included.", juce::MessageBoxIconType::NoIcon);
+    dialog->addTextEditor ("name", engine.getCurrentPresetName().isEmpty() ? juce::String ("Voice chain") : engine.getCurrentPresetName(), "Name");
+    dialog->addButton ("Save", 1, juce::KeyPress (juce::KeyPress::returnKey));
+    dialog->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+    juce::Component::SafePointer<PluginListView> safe (this);
+    dialog->enterModalState (true, juce::ModalCallbackFunction::create ([safe, dialog] (int result)
+    {
+        if (auto* self = safe.getComponent(); self != nullptr && result == 1)
+        {
+            juce::String error;
+            if (! self->engine.savePreset (dialog->getTextEditorContents ("name"), true, error)) self->reportPresetError (error);
+            self->repaint();
+        }
+    }), true);
+}
+
+void PluginListView::showPresetMenu()
+{
+    const auto presets = PresetStore().list();
+    juce::PopupMenu menu, load, startup;
+    menu.addSectionHeader ("CHAIN PRESETS");
+    menu.addItem (1, "Save changes", engine.getCurrentPreset().isNotEmpty());
+    menu.addItem (2, "Save as new preset...");
+    for (int i = 0; i < presets.size(); ++i)
+    {
+        load.addItem (100 + i, presets[i].name, true, presets[i].id == engine.getCurrentPreset());
+        startup.addItem (10000 + i, presets[i].name, true, presets[i].id == engine.getStartupPreset());
+    }
+    menu.addSubMenu ("Load preset", load, ! presets.isEmpty());
+    menu.addSeparator();
+    menu.addSubMenu ("Startup preset (saved version)", startup, ! presets.isEmpty());
+    menu.addItem (4, "Use last session at startup", true, engine.getStartupPreset().isEmpty());
+    menu.addSeparator(); menu.addItem (5, "Export current chain..."); menu.addItem (6, "Import preset...");
+    juce::Component::SafePointer<PluginListView> safe (this);
+    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&presetsButton), [safe, presets] (int result)
+    {
+        auto* self = safe.getComponent(); if (self == nullptr || result == 0) return;
+        juce::String error;
+        if (result == 1)
+        { if (! self->engine.savePreset (self->engine.getCurrentPresetName(), false, error)) self->reportPresetError (error); }
+        else if (result == 2) self->namePreset();
+        else if (result == 4)
+        { if (! self->engine.setStartupPreset ({}, error)) self->reportPresetError (error); }
+        else if (result == 5 || result == 6) self->choosePresetFile (result == 6);
+        else if (juce::isPositiveAndBelow (result - 10000, presets.size()))
+        { if (! self->engine.setStartupPreset (presets[result - 10000].id, error)) self->reportPresetError (error); }
+        else if (juce::isPositiveAndBelow (result - 100, presets.size()))
+        { if (! self->engine.loadPreset (presets[result - 100], error)) self->reportPresetError (error); else self->rebuildRows(); }
+        self->repaint();
+    });
+}
+
+void PluginListView::choosePresetFile (bool import)
+{
+    auto chooser = std::make_shared<juce::FileChooser> (import ? "Import chain preset" : "Export chain preset",
+        juce::File::getSpecialLocation (juce::File::userDocumentsDirectory).getChildFile ("Voice chain.cvpreset"), "*.cvpreset");
+    juce::Component::SafePointer<PluginListView> safe (this);
+    chooser->launchAsync ((import ? juce::FileBrowserComponent::openMode : juce::FileBrowserComponent::saveMode)
+                          | juce::FileBrowserComponent::canSelectFiles
+                          | (import ? 0 : juce::FileBrowserComponent::warnAboutOverwriting),
+        [safe, chooser, import] (const juce::FileChooser& selected)
+    {
+        auto* self = safe.getComponent(); const auto file = selected.getResult();
+        if (self == nullptr || file == juce::File()) return;
+        ChainPreset preset; juce::String error; PresetStore store;
+        if (import)
+        {
+            if (! store.importFile (file, preset, error)) { self->reportPresetError (error); return; }
+            preset.id.clear();
+            if (! store.save (preset, error) || ! self->engine.loadPreset (preset, error)) self->reportPresetError (error);
+            else self->rebuildRows();
+        }
+        else
+        {
+            if (! self->engine.snapshotPluginStates (true)) { self->reportPresetError ("Audio is busy. Try exporting again."); return; }
+            preset.name = self->engine.getCurrentPresetName().isEmpty() ? juce::String ("Voice chain") : self->engine.getCurrentPresetName();
+            preset.id = juce::Uuid().toString().removeCharacters ("-");
+            preset.plugins = self->engine.captureState (false).plugins;
+            if (! store.exportFile (preset, file.withFileExtension ("cvpreset"), error)) self->reportPresetError (error);
+        }
+        self->repaint();
+    });
+}
+
 void PluginListView::openEditor (juce::uint32 id)
 {
     const int index = engine.getChain().indexOf (id); if (index < 0) return;
     const auto& effect = engine.getChain().entries()[(size_t) index];
-    if (effect.isUnavailable()) { engine.retryMissingPlugins(); commitChange(); return; }
+    if (effect.isUnavailable()) { engine.retryMissingPlugins (true, id); commitChange(); return; }
     if (effect.isBuiltIn()) return;
     for (auto* editor : editors) if (editor->entryId == id) { editor->setVisible (true); editor->toFront (true); return; }
     auto* node = engine.getGraph().getNodeForId (effect.node); if (node == nullptr) return;
@@ -457,7 +563,11 @@ void PluginListView::openEditor (juce::uint32 id)
     if (content == nullptr) return;
     juce::Component::SafePointer<PluginListView> safe (this);
     auto* window = new EditorWindow (effect.displayName, id, [safe] (EditorWindow* closed)
-    { if (auto* self = safe.getComponent()) { self->engine.requestPersist(); self->editors.removeObject (closed); } });
+    { if (auto* self = safe.getComponent()) {
+        if (self->engine.snapshotPluginStates (true)) self->engine.requestPersist();
+        else self->reportPresetError ("Could not capture the latest plugin parameters. Try Save changes again.");
+        self->editors.removeObject (closed);
+    } });
     theme::window (*window); window->setContentOwned (content, true);
     window->centreWithSize (window->getWidth(), window->getHeight()); window->setVisible (true); window->toFront (true);
     editors.add (window);

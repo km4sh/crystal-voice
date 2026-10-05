@@ -7,12 +7,14 @@
 #include "audio/MicVSTDeviceManager.h"
 #include "audio/ScanCoordinator.h"
 #include "state/Persistence.h"
+#include "state/Presets.h"
+#include "audio/OutputSafety.h"
 
 // Besitzt AudioDeviceManager + AudioProcessorGraph. Der Graph läuft über einen
 // internen AudioProcessorPlayer; AudioEngine bleibt der Device-Callback und
 // metert Input/Output rund um den Player herum.
 class AudioEngine : private juce::AudioIODeviceCallback,
-                    private juce::ChangeListener
+                    private juce::ChangeListener, private juce::Timer
 {
 public:
     explicit AudioEngine (MicVSTDeviceManager::DeviceTypesFactory = {});
@@ -35,7 +37,9 @@ public:
     bool isMuted() const { return muted.load(); }
     void setMasterBypass (bool on) { masterBypass.store (on); requestPersist(); }
     bool isMasterBypassed() const { return masterBypass.load(); }
-    void retryMissingPlugins();
+    void retryMissingPlugins (bool userInitiated = false, juce::uint32 onlyEntry = 0);
+    void setRecoveryMode (bool enabled) { recoveryMode = enabled; }
+    bool isRecoveryMode() const { return recoveryMode; }
 
     // Buffer-Wunsch des Users in Samples; 0 = Auto (Geräte-Default-Periode).
     // Wird von applyState gesetzt und in captureState persistiert.
@@ -46,8 +50,22 @@ public:
     // die Render->Capture selbst spiegeln. Leerer String = kein Kabel gefunden.
     juce::String detectCableOutput();
 
-    MicVSTState captureState();            // liest Devices + Plugin-Kette + Blobs
+    MicVSTState captureState (bool refreshParameters = true);
+    bool snapshotPluginStates (bool force = false);
     void          applyState (const MicVSTState&);   // lädt Devices + Plugins + setStateInformation
+    bool savePreset (const juce::String& name, bool asNew, juce::String& error);
+    bool loadPreset (const ChainPreset&, juce::String& error);
+    bool setStartupPreset (const juce::String& id, juce::String& error);
+    juce::String getCurrentPreset() const { return currentPreset; }
+    juce::String getCurrentPresetName() const { return currentPresetName; }
+    juce::String getStartupPreset() const { return startupPreset; }
+    juce::String getStartupPresetName() const { return startupPresetName; }
+    bool isPresetModified() const { return presetModified || (pluginChain != nullptr && pluginChain->hasDirtyStates()); }
+    void markPresetModified() { presetModified = true; }
+    std::function<void()> onChainReplacing;
+    uint64_t getInvalidSamples() const { return invalidSamples.load(); }
+    uint64_t getClippedSamples() const { return clippedSamples.load(); }
+    uint64_t getOverruns() const { return overruns.load(); }
 
     bool isRunning() const;                 // true wenn ein Audio-Device offen ist und spielt
     std::function<void()> onStatusChanged;  // wird bei Device-Änderungen aufgerufen (UI-Status)
@@ -127,6 +145,7 @@ private:
     void audioDeviceAboutToStart (juce::AudioIODevice*) override;
     void audioDeviceStopped() override;
     void changeListenerCallback (juce::ChangeBroadcaster*) override;
+    void timerCallback() override;
 
     MicVSTDeviceManager deviceManager;   // WASAPI Low-Latency bevorzugt, Shared als Fallback (siehe MicVSTDeviceManager)
     juce::AudioProcessorGraph graph;
@@ -146,6 +165,15 @@ private:
     std::shared_ptr<bool> alive = std::make_shared<bool> (true);
     std::atomic<uint64_t> deviceGeneration { 0 };
     LevelMeter inputMeter, outputMeter;
+    OutputSafety outputSafety;
+    juce::AudioBuffer<float> cleanInput;
+    std::atomic<bool> takingSnapshot { false };
+    std::atomic<int> audioReaders { 0 };
+    std::atomic<uint64_t> invalidSamples { 0 }, clippedSamples { 0 }, overruns { 0 };
+    juce::String currentPreset, currentPresetName, startupPreset, startupPresetName;
+    bool presetModified = false, recoveryMode = false;
+    uint64_t observedRevision = 0;
+    double lastParameterChange = 0.0;
 
     std::unique_ptr<ScanCoordinator> scanner;      // != nullptr solange ein Scan läuft
     bool rescanQueued = false;   // merkt einen während des Scans angeforderten Folgescan vor

@@ -4,7 +4,7 @@ A small Windows VST3 host for a better microphone in games, calls and streams.
 
 **Microphone → effects → virtual audio cable → your application**
 
-Crystal Voice is a fork of [MicVST](https://github.com/philipz794/MicVST). It keeps the native C++/JUCE audio engine and portable executable, with a redesigned interface and fixes to routing, plugin restoration and settings persistence.
+Crystal Voice is an independent project based on [MicVST](https://github.com/philipz794/MicVST). It keeps the native C++/JUCE audio engine and portable executable, with a redesigned interface, chain presets, safe startup and fixes to routing, plugin restoration and settings persistence.
 
 ![Crystal Voice interface](assets/screenshot.png)
 
@@ -25,6 +25,23 @@ Both level bars and their numerical readings use VU-style average detection with
 
 **[ LIBRARY ] → Automatic scan folders** lists the folders scanned automatically and marks those that are installed. These include the [standard VST3 locations](https://steinbergmedia.github.io/vst3_dev_portal/pages/Technical%2BDocumentation/Locations%2BFormat/Plugin%2BLocations.html), the portable executable's `VST3` subfolder, semicolon-separated `VST3_PATH` entries, and common `VSTPlugins`, `Steinberg/VstPlugins`, `Common Files/VST2` and `Common Files/Steinberg/VST2` directories described by [Steinberg](https://helpcenter.steinberg.de/hc/en-us/articles/115000177084-VST-plug-in-locations-on-Windows). Only `.vst3` effects are discovered in those directories; VST2 `.dll` plugins are not supported. Use **Add VST3 folder** for other locations.
 
+### Save and restore an effect chain
+
+Open **[ PRESETS ]**:
+
+- **Save as new preset** names and saves the effect order, per-effect bypass and each plugin's internal parameters. **Save changes** explicitly updates that saved version.
+- **Load preset** replaces the chain only after all effects load successfully. Missing/ambiguous effects or a plugin load error leave the current chain intact. Device routing, master mute and master bypass are retained.
+- **Startup preset (saved version)** pins a saved chain for the next launch. Ordinary parameter edits keep updating the current session without overwriting the pinned preset. Choose **Use last session at startup** to resume the current session instead.
+- **Export current chain** and **Import preset** use portable `.cvpreset` files. The receiving computer needs the same plugins; the files contain settings, not plugin binaries. Moving a plugin between folders is resolved by its format, manufacturer and class identifier when the match is unique.
+
+Presets live in `%APPDATA%\CrystalVoice\Presets`. Startup presets choose the chain; **Start with Windows** separately controls whether the application launches at login. A `*` beside the current preset name indicates edits not yet saved to that named preset.
+
+Session disk writes run in the background and merge pending changes. Parameter notifications are collected until about one second of inactivity; Save, Export, editor close, window hide and Quit also capture the latest parameters. Reading a plugin's state briefly pauses effect processing with a 5 ms fade to silence and back while audio callbacks continue. Snapshot duration depends on the plugin, so save during a pause in speech when continuity matters. State functions still run inside the host and can stall or crash it.
+
+Mute and master bypass use 5 ms ramps. The dry bypass path aligns with reported plugin latency up to one second; plugins continue processing while master bypass is on. Invalid input/output samples are replaced with zero and final output is bounded to full scale. Hover over **AUDIO CPU** for callback deadline misses, invalid samples and limited output samples; these counters are diagnostics, not true-peak measurements.
+
+An interrupted session starts in **SAFE START**, with third-party effects paused, their settings preserved and the microphone muted. Use an effect's **Retry** to restore it individually, or **Library → Retry missing effects** to restore all; audio stays muted until you unmute. Automatic scanning cannot restore the remaining paused effects. `--safe-mode` forces this behavior. The running host can be asked to save and exit with `CrystalVoice.exe --quit`; closing the main window still hides it to the tray.
+
 ## What changed from MicVST
 
 - A console interface inspired by threshold-34: black surfaces, green/cyan accents, square panels, an integrated title bar and embedded JetBrains Mono Regular/Medium. Routing stays on the left; segmented input/output meters and effects stay on the right. The backdrop is static.
@@ -34,6 +51,8 @@ Both level bars and their numerical readings use VU-style average detection with
 - VST3 class identifiers are saved, including multiple effects inside the same bundle. Bundle/binary cache aliases no longer cause a scan on every launch.
 - Row actions use stable effect identities and safe callbacks. A plugin has one editor window; closing it saves its parameters. Plugins without a custom editor can use the generic parameter editor.
 - Settings and the scan cache are written atomically. A valid previous settings file is kept as `config.xml.bak` and used if the main file is damaged.
+- Named chain presets with plugin parameter blobs, import/export, pinned startup choices, transactional chain loading and path-independent plugin restoration.
+- Cached/debounced parameter snapshots, coalesced background session writes, smooth mute/bypass, finite-sample protection and interrupted-session recovery with individual effect retry.
 - Meters follow window visibility, including first launch and returning from the tray, and stop refreshing when hidden. Startup registry reads happen once per second while visible, rather than every meter frame.
 - The fork has its own config folder, startup entry and update source. It imports an existing MicVST setup on first normal launch without changing the original files.
 

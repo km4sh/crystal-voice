@@ -25,6 +25,9 @@ juce::ValueTree toValueTree (const MicVSTState& s)
     t.setProperty (ids::masterBypass, s.bypassed, nullptr);
     t.setProperty (ids::folders, s.pluginFolders.joinIntoString ("\n"), nullptr);
     t.setProperty (ids::window, s.windowState, nullptr);
+    t.setProperty ("currentPreset", s.currentPreset, nullptr);
+    t.setProperty ("startupPreset", s.startupPreset, nullptr);
+    t.setProperty ("presetModified", s.presetModified, nullptr);
     t.setProperty (ids::updEnabled, s.updateCheckEnabled, nullptr);
     t.setProperty (ids::updAsked, s.updateCheckAsked, nullptr);
     t.setProperty (ids::updLast, s.lastNotifiedVersion, nullptr);
@@ -38,10 +41,28 @@ juce::ValueTree toValueTree (const MicVSTState& s)
         pt.setProperty (ids::name, p.displayName, nullptr);
         pt.setProperty (ids::byp, p.bypassed, nullptr);
         pt.setProperty (ids::blob, p.state.toBase64Encoding(), nullptr);
+        pt.setProperty ("format", p.format, nullptr);
+        pt.setProperty ("manufacturer", p.manufacturer, nullptr);
+        pt.setProperty ("classUid", p.classUid, nullptr);
         list.appendChild (pt, nullptr);
     }
     t.appendChild (list, nullptr);
     return t;
+}
+
+bool decodePluginState (const juce::String& encoded, juce::MemoryBlock& result)
+{
+    if (encoded.isEmpty()) { result.reset(); return true; } // Legacy entries without a snapshot.
+    const int dot = encoded.indexOfChar ('.');
+    if (dot <= 0 || dot > 8) return false;
+    const auto length = encoded.substring (0, dot), payload = encoded.substring (dot + 1);
+    if (! length.containsOnly ("0123456789")) return false;
+    const auto bytes = length.getLargeIntValue();
+    if (bytes > 64 * 1024 * 1024 || payload.length() != (bytes * 8 + 5) / 6
+        || ! payload.containsOnly (".ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+")) return false;
+    juce::MemoryBlock decoded;
+    if (! decoded.fromBase64Encoding (encoded) || decoded.toBase64Encoding() != encoded) return false;
+    result = std::move (decoded); return true;
 }
 
 MicVSTState fromValueTree (const juce::ValueTree& t)
@@ -66,6 +87,9 @@ MicVSTState fromValueTree (const juce::ValueTree& t)
         if (f.isNotEmpty()) { s.pluginFolders.addLines (f); s.pluginFolders.removeEmptyStrings(); }
     }
     s.windowState = t.getProperty (ids::window).toString();
+    s.currentPreset = t.getProperty ("currentPreset").toString();
+    s.startupPreset = t.getProperty ("startupPreset").toString();
+    s.presetModified = t.getProperty ("presetModified", false);
     s.updateCheckEnabled  = t.getProperty (ids::updEnabled, false);
     s.updateCheckAsked    = t.getProperty (ids::updAsked, false);
     s.lastNotifiedVersion = t.getProperty (ids::updLast).toString();
@@ -79,7 +103,10 @@ MicVSTState fromValueTree (const juce::ValueTree& t)
         p.identifier = pt.getProperty (ids::identifier);
         p.displayName = pt.getProperty (ids::name);
         p.bypassed = pt.getProperty (ids::byp, false);
-        p.state.fromBase64Encoding (pt.getProperty (ids::blob).toString());
+        decodePluginState (pt.getProperty (ids::blob).toString(), p.state);
+        p.format = pt.getProperty ("format").toString();
+        p.manufacturer = pt.getProperty ("manufacturer").toString();
+        p.classUid = pt.getProperty ("classUid").toString();
         s.plugins.add (p);
     }
     return s;

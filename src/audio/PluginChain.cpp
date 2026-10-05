@@ -88,6 +88,39 @@ namespace
 PluginChain::PluginChain (juce::AudioProcessorGraph& g, NodeID in, NodeID out)
     : graph (g), inputNode (in), outputNode (out) {}
 
+PluginChain::~PluginChain()
+{
+    for (const auto& entry : chain)
+        if (! entry.isUnavailable()) graph.removeNode (entry.node, juce::AudioProcessorGraph::UpdateKind::none);
+}
+
+PluginChain::StateObserver::StateObserver (juce::AudioProcessorGraph::Node::Ptr n) : node (std::move (n))
+{ node->getProcessor()->addListener (this); }
+PluginChain::StateObserver::~StateObserver() { node->getProcessor()->removeListener (this); }
+void PluginChain::StateObserver::capture()
+{
+    const auto before = revision.load();
+    juce::MemoryBlock next;
+    node->getProcessor()->getStateInformation (next);
+    cached = std::move (next); captured = before;
+}
+bool PluginChain::hasDirtyStates() const
+{
+    for (const auto& entry : chain) if (entry.observer != nullptr && entry.observer->dirty()) return true;
+    return false;
+}
+uint64_t PluginChain::stateRevision() const
+{
+    uint64_t revision = 0;
+    for (const auto& entry : chain) if (entry.observer != nullptr) revision += entry.observer->generation();
+    return revision;
+}
+void PluginChain::captureStates (bool force)
+{
+    for (const auto& entry : chain)
+        if (entry.observer != nullptr && (force || entry.observer->dirty())) entry.observer->capture();
+}
+
 bool PluginChain::addPlugin (juce::AudioPluginFormatManager& fm,
                              const juce::PluginDescription& desc,
                              double sampleRate, int blockSize,
@@ -107,7 +140,7 @@ bool PluginChain::addPlugin (juce::AudioPluginFormatManager& fm,
     if (instance->getMainBusNumOutputChannels() == 0)
         if (auto* b = instance->getBus (false, 0)) b->enable (true);
 
-    auto node = graph.addNode (std::move (instance));
+    auto node = graph.addNode (std::move (instance), {}, juce::AudioProcessorGraph::UpdateKind::none);
     if (node == nullptr) { errorOut = "addNode failed"; return false; }
 
     chain.push_back ({ node->nodeID, desc.fileOrIdentifier, false });
@@ -115,13 +148,16 @@ bool PluginChain::addPlugin (juce::AudioPluginFormatManager& fm,
     entry.identifier = desc.createIdentifierString();
     entry.displayName = desc.name;
     entry.manufacturer = desc.manufacturerName;
+    entry.format = desc.pluginFormatName;
+    entry.classUid = juce::String::toHexString (desc.uniqueId != 0 ? desc.uniqueId : desc.deprecatedUid);
+    entry.observer = std::make_shared<StateObserver> (node);
     entry.id = nextId++;
     return true;
 }
 
 void PluginChain::addMonoToStereo()
 {
-    auto node = graph.addNode (std::make_unique<MonoToStereoProcessor>());
+    auto node = graph.addNode (std::make_unique<MonoToStereoProcessor>(), {}, juce::AudioProcessorGraph::UpdateKind::none);
     if (node == nullptr) return;
     chain.push_back ({ node->nodeID, monoToStereoId, false });
     chain.back().displayName = "Mono to stereo";
@@ -131,7 +167,7 @@ void PluginChain::addMonoToStereo()
 
 void PluginChain::addStereoToMono()
 {
-    auto node = graph.addNode (std::make_unique<StereoToMonoProcessor>());
+    auto node = graph.addNode (std::make_unique<StereoToMonoProcessor>(), {}, juce::AudioProcessorGraph::UpdateKind::none);
     if (node == nullptr) return;
     chain.push_back ({ node->nodeID, stereoToMonoId, false });
     chain.back().displayName = "Stereo to mono";
@@ -148,6 +184,7 @@ void PluginChain::addUnavailable (const PluginEntryState& state, const juce::Str
         : juce::File (state.fileOrId).getFileNameWithoutExtension();
     entry.bypassed = state.bypassed;
     entry.savedState = state.state;
+    entry.format = state.format; entry.manufacturer = state.manufacturer; entry.classUid = state.classUid;
     entry.error = error;
     entry.id = nextId++;
     chain.push_back (std::move (entry));

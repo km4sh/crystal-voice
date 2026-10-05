@@ -20,6 +20,8 @@ namespace
                 "5. Closing the main window keeps audio running in the tray. Right-click the tray icon to quit.\n\n"
                 "RNNoise requires 48 kHz. Choose matching sample rates in your audio device settings. Reported latency is a host estimate; the cable and receiving application add their own delay.\n\n"
                 "Settings are saved automatically in %APPDATA%\\CrystalVoice. Missing effects stay in the chain with their saved settings. Rescan after reinstalling a plugin.\n\n"
+                "PRESETS saves, loads, imports and exports complete effect chains including plugin parameters. Startup preset uses the saved version; later edits remain in the current session until you explicitly Save changes. Use last session at startup restores normal session recovery.\n\n"
+                "After an interrupted session, Safe start keeps third-party effects paused and the microphone muted. Use each effect's Retry to restore it individually, or Library > Retry missing effects to restore all, then unmute.\n\n"
                 "VB-CABLE: https://vb-audio.com/Cable/\nProject: https://github.com/km4sh/crystal-voice\n\n"
                 "FONT LICENSE // JETBRAINS MONO 2.304\n\n"
                 + juce::String::fromUTF8 (BinaryData::OFL_txt, BinaryData::OFL_txtSize), false);
@@ -192,12 +194,15 @@ void MainComponent::refreshStatus()
     pluginList.refreshProcessingState();
     const bool routed = engine.isRunning() && engine.getRequestedSetup().inputDeviceName.isNotEmpty()
         && engine.getRequestedSetup().outputDeviceName.isNotEmpty();
-    status.setText (engine.isMuted() ? "[ MIC MUTED ]" : engine.getDeviceError().isNotEmpty() ? "[ DEVICE ERROR ]"
+    status.setText (engine.isRecoveryMode() ? "[ SAFE START ]" : engine.isMuted() ? "[ MIC MUTED ]" : engine.getDeviceError().isNotEmpty() ? "[ DEVICE ERROR ]"
         : ! routed ? "[ NOT CONNECTED ]" : engine.isMasterBypassed() ? "[ DRY MIC ]" : "[ SIGNAL LIVE ]", juce::dontSendNotification);
     status.setColour (juce::Label::textColourId, engine.isMuted() ? theme::danger
         : routed && engine.getDeviceError().isEmpty() && ! engine.isMasterBypassed() ? theme::accent : theme::warning);
     performance.setText ("AUDIO CPU " + juce::String (engine.getDeviceManager().getCpuUsage() * 100.0, 1) + "%",
                          juce::dontSendNotification);
+    performance.setTooltip ("Callback deadline misses: " + juce::String (engine.getOverruns())
+        + "\nInvalid samples replaced: " + juce::String (engine.getInvalidSamples())
+        + "\nOutput samples limited to full scale: " + juce::String (engine.getClippedSamples()));
 }
 
 void MainComponent::showHowTo()

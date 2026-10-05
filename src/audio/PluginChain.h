@@ -10,6 +10,23 @@
 class PluginChain
 {
 public:
+    struct StateObserver : private juce::AudioProcessorListener
+    {
+        explicit StateObserver (juce::AudioProcessorGraph::Node::Ptr);
+        ~StateObserver() override;
+        bool dirty() const { return revision.load() != captured; }
+        uint64_t generation() const { return revision.load(); }
+        void capture(); // Caller must quiesce graph processing first.
+        void acceptState (const juce::MemoryBlock& state) { cached = state; captured = revision.load(); }
+        juce::MemoryBlock cached;
+    private:
+        void audioProcessorParameterChanged (juce::AudioProcessor*, int, float) override { ++revision; }
+        void audioProcessorChanged (juce::AudioProcessor*, const ChangeDetails& details) override
+        { if (details.programChanged || details.nonParameterStateChanged || details.parameterInfoChanged) ++revision; }
+        juce::AudioProcessorGraph::Node::Ptr node;
+        std::atomic<uint64_t> revision { 1 };
+        uint64_t captured = 0;
+    };
     // Marker im fileOrId-Feld für die internen Glieder (kein VST).
     static constexpr const char* monoToStereoId = "builtin:mono2stereo";
     static constexpr const char* stereoToMonoId = "builtin:stereo2mono";
@@ -22,12 +39,20 @@ public:
         juce::String identifier, displayName, manufacturer, error;
         juce::MemoryBlock savedState;
         juce::uint32 id = 0;
+        juce::String format, classUid;
+        std::shared_ptr<StateObserver> observer;
         bool isBuiltIn() const { return fileOrId.startsWith ("builtin:"); }
         bool isUnavailable() const { return node == NodeID{}; }
     };
 
     PluginChain (juce::AudioProcessorGraph& graph,
                  NodeID inputNode, NodeID outputNode);
+    ~PluginChain();
+    NodeID input() const { return inputNode; }
+    NodeID output() const { return outputNode; }
+    bool hasDirtyStates() const;
+    uint64_t stateRevision() const;
+    void captureStates (bool force);
 
     // Lädt ein VST3 (synchron) und hängt es ans Ende der Kette. Gibt false bei Fehler.
     bool addPlugin (juce::AudioPluginFormatManager& fm,

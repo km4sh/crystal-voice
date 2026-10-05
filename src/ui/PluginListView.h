@@ -19,6 +19,10 @@ private:
     void addFromPicker (const juce::PluginDescription&);
     void showFolderMenu();
     void chooseFolder();
+    void showPresetMenu();
+    void namePreset();
+    void choosePresetFile (bool import);
+    void reportPresetError (const juce::String&);
     void openEditor (juce::uint32 id);
     void rebuildRows();
     void commitChange();
@@ -58,6 +62,7 @@ private:
     };
     AudioEngine& engine;
     juce::TextButton addButton { "[ + ADD ]" }, foldersButton { "[ LIBRARY ]" },
+        presetsButton { "[ PRESETS ]" },
         bypassButton { "[ BYPASS ]" }, skipScanButton { "Skip" };
     juce::Label scanLabel, noticeLabel;
     double scanProgress = 0.0;

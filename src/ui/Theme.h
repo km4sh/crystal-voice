@@ -77,6 +77,9 @@ public:
         setColour (juce::TooltipWindow::outlineColourId, theme::border);
         setColour (juce::ProgressBar::backgroundColourId, theme::raised);
         setColour (juce::ProgressBar::foregroundColourId, theme::accent);
+        setColour (juce::AlertWindow::backgroundColourId, theme::surface);
+        setColour (juce::AlertWindow::textColourId, theme::text);
+        setColour (juce::AlertWindow::outlineColourId, theme::border);
     }
     juce::Font getTextButtonFont (juce::TextButton&, int) override { return theme::font (13, true); }
     juce::Typeface::Ptr getTypefaceForFont (const juce::Font& f) override

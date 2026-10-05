@@ -13,7 +13,7 @@ LevelReading computeLevel (const juce::AudioBuffer<float>& buffer)
         const float* d = buffer.getReadPointer (ch);
         for (int i = 0; i < n; ++i)
         {
-            const float s = d[i];
+            const float s = std::isfinite (d[i]) ? d[i] : 0.0f;
             sumSq += (double) s * s;
             peak = juce::jmax (peak, std::abs (s));
         }
@@ -87,7 +87,7 @@ void LevelMeter::process (const juce::AudioBuffer<float>& buffer)
         float samplePeak = 0.0f;
         for (int channel = 0; channel < channels; ++channel)
         {
-            const float value = data[channel][sample];
+            const float value = data[channel] != nullptr && std::isfinite (data[channel][sample]) ? data[channel][sample] : 0.0f;
             const float magnitude = std::abs (value);
             rectified += magnitude;
             sumSquares += (double) value * value;

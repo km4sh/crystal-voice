@@ -26,9 +26,11 @@ FetchContent_MakeAvailable(JUCE)
 add_library(MicVSTCore STATIC
     src/audio/Metering.cpp
     src/audio/PluginLocations.cpp
+    src/audio/PluginIdentity.cpp
     src/audio/GraphConnections.cpp
     src/audio/ScanCoordinator.cpp
     src/state/Persistence.cpp
+    src/state/Presets.cpp
     src/state/PluginScanCache.cpp
     src/ui/PluginSearch.cpp
 )
@@ -101,6 +103,7 @@ target_sources(MicVSTTests PRIVATE
     tests/UiTests.cpp
     tests/VuMeterTests.cpp
     tests/PluginLocationsTests.cpp
+    tests/CoreFeaturesTests.cpp
     src/ui/PluginListView.cpp
     src/ui/LevelMeterComponent.cpp
     src/ui/DevicePanel.cpp

@@ -94,6 +94,8 @@ struct AudioDeviceRegression : juce::UnitTest
             for (int channel = 0; channel < 2; ++channel)
                 expectWithinAbsoluteError (buffer.getSample (channel, 20), 0.2f, 0.00001f);
             engine.setMuted (true); buffer = device->render();
+            expect (buffer.getSample (0, 0) > 0.0f && buffer.getSample (0, 0) < 0.2f);
+            for (int i = 0; i < 4; ++i) buffer = device->render();
             expectWithinAbsoluteError (buffer.getMagnitude (0, buffer.getNumSamples()), 0.0f, 0.00001f);
             engine.setMuted (false);
         }

@@ -9,6 +9,7 @@ struct PluginEntryState
     juce::String displayName;
     bool bypassed = false;
     juce::MemoryBlock state;   // getStateInformation()-Blob
+    juce::String format, manufacturer, classUid; // Stable across installation paths.
 };
 
 struct MicVSTState
@@ -21,6 +22,8 @@ struct MicVSTState
     juce::Array<PluginEntryState> plugins;
     juce::StringArray pluginFolders;   // zusätzliche VST3-Suchordner
     juce::String windowState;          // DocumentWindow::getWindowStateAsString() (Größe/Position)
+    juce::String currentPreset, startupPreset;
+    bool presetModified = false;
 
     // Opt-in Auto-Update-Check (siehe UpdateChecker). Default: aus, nie gefragt.
     bool updateCheckEnabled = false;   // Checkbox-Zustand
@@ -30,6 +33,7 @@ struct MicVSTState
 
 juce::ValueTree  toValueTree (const MicVSTState&);
 MicVSTState    fromValueTree (const juce::ValueTree&);
+bool          decodePluginState (const juce::String&, juce::MemoryBlock&);
 
 // Datei unter %APPDATA%\MicVST\config.xml
 juce::File    configFile();
